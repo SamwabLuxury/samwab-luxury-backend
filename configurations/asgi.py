@@ -1,16 +1,12 @@
-"""
-ASGI config for configurations project.
+"""ASGI entry point. Servers import ``application`` from here.
 
-It exposes the ASGI callable as a module-level variable named ``application``.
-
-For more information on this file, see
-https://docs.djangoproject.com/en/6.1/howto/deployment/asgi/
+Uses production settings unless DJANGO_SETTINGS_MODULE says otherwise.
 """
 
 import os
 
 from django.core.asgi import get_asgi_application
 
-os.environ.setdefault("DJANGO_SETTINGS_MODULE", "configurations.settings")
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "configurations.settings.production")
 
 application = get_asgi_application()
