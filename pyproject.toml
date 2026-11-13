@@ -1,0 +1,38 @@
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+extend-exclude = ["migrations"]
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "UP", "C4", "SIM", "DJ", "S", "T20", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+"configurations/settings/*.py" = ["F403", "F405"]
+"**/tests/**" = ["S101"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["apps", "configurations"]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+plugins = ["mypy_django_plugin.main", "mypy_drf_plugin.main"]
+files = ["apps", "configurations"]
+exclude = ['/migrations/']
+
+[[tool.mypy.overrides]]
+module = ["environ"]
+ignore_missing_imports = true
+
+[tool.django-stubs]
+django_settings_module = "configurations.settings.test"
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "configurations.settings.test"
+testpaths = ["apps"]
+python_files = ["test_*.py"]
+addopts = "-ra --strict-markers --strict-config"
+
+[tool.coverage.run]
+source = ["apps"]
+omit = ["*/migrations/*", "*/tests/*"]

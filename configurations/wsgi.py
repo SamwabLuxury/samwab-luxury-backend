@@ -1,16 +1,12 @@
-"""
-WSGI config for configurations project.
+"""WSGI entry point. Servers import ``application`` from here.
 
-It exposes the WSGI callable as a module-level variable named ``application``.
-
-For more information on this file, see
-https://docs.djangoproject.com/en/6.1/howto/deployment/wsgi/
+Uses production settings unless DJANGO_SETTINGS_MODULE says otherwise.
 """
 
 import os
 
 from django.core.wsgi import get_wsgi_application
 
-os.environ.setdefault("DJANGO_SETTINGS_MODULE", "configurations.settings")
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "configurations.settings.production")
 
 application = get_wsgi_application()
