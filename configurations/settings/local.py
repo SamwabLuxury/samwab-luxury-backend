@@ -1,6 +1,9 @@
 """Settings for a developer's own machine."""
 
+from copy import deepcopy
+
 from .base import *
+from .base import LOGGING as BASE_LOGGING
 from .base import REST_FRAMEWORK as BASE_REST_FRAMEWORK
 
 DEBUG = True
@@ -14,3 +17,7 @@ REST_FRAMEWORK = {
         "rest_framework.renderers.BrowsableAPIRenderer",
     ],
 }
+
+# Plain text logs are easier to read in a terminal than JSON.
+LOGGING = deepcopy(BASE_LOGGING)
+LOGGING["handlers"]["console"]["formatter"] = "plain"
