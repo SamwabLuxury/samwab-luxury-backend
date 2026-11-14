@@ -34,6 +34,7 @@ THIRD_PARTY_APPS = [
 ]
 LOCAL_APPS = [
     "apps.core",
+    "apps.accounts",
 ]
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 
@@ -75,6 +76,9 @@ DATABASES = {
         "NAME": BASE_DIR / "db.sqlite3",
     }
 }
+
+# Our own user model: people log in with their email. See apps/accounts/models.py.
+AUTH_USER_MODEL = "accounts.User"
 
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
