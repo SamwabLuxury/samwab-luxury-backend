@@ -24,13 +24,20 @@ python -m venv .venv
 source .venv/Scripts/activate        # macOS and Linux: source .venv/bin/activate
 python -m pip install -r requirements/dev.txt
 cp .env.example .env                 # then set DJANGO_SECRET_KEY to any long random text
+python manage.py migrate             # creates the local database (db.sqlite3)
+python manage.py createsuperuser     # your own admin login: an email and a password
 python manage.py runserver
 ```
 
 Open http://127.0.0.1:8000/api/v1/health/ and you should see `{"status": "ok"}`.
+Log in to the admin site at http://127.0.0.1:8000/admin/ with the email and password
+you just chose.
 
-Do not run `python manage.py migrate` yet. The custom user model arrives in a later
-build and must exist before the first migration.
+Activate the virtual environment (`source .venv/Scripts/activate`) in every new
+terminal window before you run `python` or `pip`.
+
+The local database is a SQLite file for now. It is ignored by Git, so every
+developer has their own. It moves to PostgreSQL in a later build.
 
 ## Checks to run before you push
 
@@ -49,6 +56,7 @@ To run the lint and format checks automatically before every commit, run
 
 ```
 apps/                 our code, one folder per business area
+  accounts/           users: the User model, its manager and its admin screens
   core/               shared building blocks used by every other app
     ids.py            new_uuid(): the ID every row gets
     models.py         BaseModel: id, created_at, updated_at
@@ -81,6 +89,7 @@ Files are added when an app needs them, so not every app has every file.
 
 | App | What it owns |
 |---|---|
+| `accounts` | Users. People log in with their email; there is no username. |
 | `core` | Shared building blocks: IDs, `BaseModel`, `Money`, policy values, errors, paging, request IDs, the API description and the health endpoint. |
 
 ## Shared building blocks
@@ -118,6 +127,19 @@ fail at once and never reach the database.
 Every endpoint needs a logged-in user unless the table says otherwise.
 
 The docs and the OpenAPI file are built from the code, so they are always current.
+
+### Users
+
+- Everyone is a `User` (`apps/accounts/models.py`): buyers, owners, dealers and staff.
+- People log in with their email address. Emails are stored in lowercase, so
+  `Ada@Example.com` and `ada@example.com` are the same account.
+- A role is not stored on the user. Being an owner or a dealer is worked out from what
+  the person has completed, so one account can buy, sell and bid.
+- Staff permissions use Django groups, managed in the admin site.
+- Always get the model with `get_user_model()` or `settings.AUTH_USER_MODEL`, and
+  create users with `User.objects.create_user(email, password)`.
+
+Sign-up and login endpoints arrive in the next build.
 
 ### Errors
 
@@ -198,4 +220,4 @@ Secrets never go into Git. `.env` is ignored, and `.env.example` lists every var
 
 ## Build status
 
-Last build: 03, API basics (error format, paging, request IDs, API description).
+Last build: 04, custom user (email login, first database migration, admin screens).
