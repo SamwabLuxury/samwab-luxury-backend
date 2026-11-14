@@ -49,6 +49,10 @@ To run the lint and format checks automatically before every commit, run
 ```
 apps/                 our code, one folder per business area
   core/               shared building blocks used by every other app
+    ids.py            new_uuid(): the ID every row gets
+    models.py         BaseModel: id, created_at, updated_at
+    money.py          Money: whole cents plus a currency
+    policy.py         time limits and default rates
     api/              views and URLs
     tests/            tests for this app
 configurations/       project wiring only
@@ -71,7 +75,30 @@ Files are added when an app needs them, so not every app has every file.
 
 | App | What it owns |
 |---|---|
-| `core` | Shared building blocks. Today: the health endpoint. |
+| `core` | Shared building blocks: IDs, `BaseModel`, `Money`, policy values and the health endpoint. |
+
+## Shared building blocks
+
+Every app uses these, so learn them first. They live in `apps/core`.
+
+| Use | Import | Rule |
+|---|---|---|
+| A new model | `from apps.core.models import BaseModel` | Every model extends `BaseModel`. It adds `id`, `created_at` and `updated_at`. |
+| A new ID | `from apps.core.ids import new_uuid` | IDs are UUID version 7: they sort by creation time and cannot be guessed. |
+| An amount of money | `from apps.core.money import Money` | Money is whole cents plus a currency. Never use floats or decimals. |
+| A time limit or default rate | `from apps.core import policy` | Read the value from `policy`. Never type the number into your own code. |
+
+```python
+from apps.core.money import Money
+
+price = Money(100_000)  # $1,000.00
+commission = price.share(2_500)  # 25% -> Money(25_000)
+owner_share = price - commission  # Money(75_000)
+deposit, rest = price.split([1, 1])  # two parts that add up to the price
+```
+
+`Money` refuses negative amounts, floats and mixed currencies, so those mistakes
+fail at once and never reach the database.
 
 ## API
 
@@ -103,4 +130,4 @@ Secrets never go into Git. `.env` is ignored, and `.env.example` lists every var
 
 ## Build status
 
-Last build: 00, project skeleton.
+Last build: 02, core types (IDs, BaseModel, Money, policy).
