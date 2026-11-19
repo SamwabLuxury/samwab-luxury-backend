@@ -33,6 +33,7 @@ def problem(response: Any, status: int, code: str) -> dict[str, Any]:
     assert isinstance(body["title"], str) and body["title"]
     assert isinstance(body["detail"], str) and body["detail"]
     assert body["request_id"] == response[REQUEST_ID_HEADER]
+    assert body["instance"] == response.request["PATH_INFO"]
     return body
 
 
@@ -189,8 +190,8 @@ def test_too_many_requests_keeps_the_retry_after_header(client: Client) -> None:
         ("/api/v1/conflict/", 409, "conflict"),
         ("/api/v1/app-not-found/", 404, "not_found"),
         ("/api/v1/app-forbidden/", 403, "permission_denied"),
-        ("/api/v1/custom-app-error/", 400, "bid_too_low"),
-        ("/api/v1/custom-message/", 400, "date_too_early"),
+        ("/api/v1/custom-app-error/", 422, "bid_too_low"),
+        ("/api/v1/custom-message/", 422, "date_too_early"),
     ],
 )
 def test_app_errors_become_problems(client: Client, path: str, status: int, code: str) -> None:
@@ -234,3 +235,46 @@ def test_crash_outside_the_api_is_a_normal_page_that_hides_the_cause() -> None:
 def test_the_real_project_uses_these_handlers() -> None:
     assert configurations.urls.handler404 == "apps.core.api.errors.page_not_found"
     assert configurations.urls.handler500 == "apps.core.api.errors.server_error"
+
+
+# ---------- CSRF ----------
+
+
+def test_missing_csrf_token_on_an_api_path_is_a_json_403() -> None:
+    client = Client(enforce_csrf_checks=True)
+
+    body = problem(client.post("/api/v1/plain-form/"), 403, "csrf_failed")
+
+    assert "errors" not in body
+
+
+def test_missing_csrf_token_outside_the_api_is_a_normal_page() -> None:
+    client = Client(enforce_csrf_checks=True)
+
+    response = client.post("/pages/plain-form/")
+
+    assert response.status_code == 403
+    assert response["Content-Type"].startswith("text/html")
+
+
+def test_a_valid_csrf_token_is_accepted() -> None:
+    client = Client(enforce_csrf_checks=True)
+    token = client.get("/api/v1/plain-form/").cookies["csrftoken"].value
+
+    response = client.post("/api/v1/plain-form/", headers={"X-CSRFToken": token})
+
+    assert response.status_code == 200
+
+
+def test_the_project_uses_the_json_csrf_answer() -> None:
+    from django.conf import settings
+
+    assert settings.CSRF_FAILURE_VIEW == "apps.core.api.errors.csrf_failure"
+
+
+# ---------- allauth paths ----------
+
+
+@pytest.mark.urls("configurations.urls")
+def test_unknown_allauth_path_is_json(client: Client) -> None:
+    problem(client.get("/_allauth/no-such-endpoint/"), 404, "not_found")

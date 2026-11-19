@@ -12,6 +12,8 @@ Django API. The front ends live in their own repository.
 | Django | 6.1 |
 | Django REST Framework | 3.18 |
 | API description | drf-spectacular (OpenAPI 3) |
+| Sign-up and login | django-allauth 65 (headless API) |
+| Password hashing | Argon2 |
 | Tests | pytest, pytest-django |
 | Code quality | Ruff (lint and format), mypy |
 
@@ -38,6 +40,9 @@ terminal window before you run `python` or `pip`.
 
 The local database is a SQLite file for now. It is ignored by Git, so every
 developer has their own. It moves to PostgreSQL in a later build.
+
+Emails, such as sign-up codes, are printed in the terminal where `runserver` runs.
+Nothing is sent from your machine.
 
 ## Checks to run before you push
 
@@ -121,6 +126,8 @@ fail at once and never reach the database.
 | Method and path | Purpose | Login needed |
 |---|---|---|
 | `GET /api/v1/health/` | Says the API is running | No |
+| `GET /api/v1/me/` | The logged-in user: profile, roles and onboarding steps | Yes |
+| `PATCH /api/v1/me/` | Change her names, country, locale or timezone | Yes |
 | `GET /api/v1/docs/` | A page to browse and try every endpoint | No |
 | `GET /api/v1/schema/` | The OpenAPI file. Import it into Postman. Add `?format=json` for JSON | No |
 
@@ -133,13 +140,54 @@ The docs and the OpenAPI file are built from the code, so they are always curren
 - Everyone is a `User` (`apps/accounts/models.py`): buyers, owners, dealers and staff.
 - People log in with their email address. Emails are stored in lowercase, so
   `Ada@Example.com` and `ada@example.com` are the same account.
-- A role is not stored on the user. Being an owner or a dealer is worked out from what
-  the person has completed, so one account can buy, sell and bid.
-- Staff permissions use Django groups, managed in the admin site.
+- One account per person. Every account can buy, so there is no buyer role.
+- Other roles are Django groups with these names: `owner`, `dealer`, `intake_staff`,
+  `reviewer`, `catalog_editor`, `partner`, `support`, `finance`, `admin`
+  (`apps/accounts/roles.py`). `owner` is added when Stripe enables her payouts,
+  `dealer` when an admin approves her application, and staff roles by an admin in
+  the admin site. Sign-up never grants a role.
+- `signup_intent` records which sign-up page she used (`buyer`, `owner` or `dealer`).
+  It only decides which onboarding she sees.
 - Always get the model with `get_user_model()` or `settings.AUTH_USER_MODEL`, and
   create users with `User.objects.create_user(email, password)`.
 
-Sign-up and login endpoints arrive in the next build.
+### Sign-up and login (django-allauth)
+
+Sign-up, login, logout, email codes and password reset are django-allauth's
+headless API under `/_allauth/browser/v1/`. These endpoints use allauth's own
+response and error format, not ours. allauth describes them at
+http://127.0.0.1:8000/_allauth/openapi.html.
+
+| Method and path | Purpose |
+|---|---|
+| `GET /_allauth/browser/v1/config` | Call once when the web app loads. It sets the `csrftoken` cookie |
+| `POST /_allauth/browser/v1/auth/signup` | `{"email", "password", "intent"}`. `intent` is `buyer` (default), `owner` or `dealer` |
+| `POST /_allauth/browser/v1/auth/email/verify` | `{"key": "123456"}`: the 6-digit code from the email. Logs her in |
+| `POST /_allauth/browser/v1/auth/login` | `{"email", "password"}` |
+| `GET /_allauth/browser/v1/auth/session` | Is she logged in? |
+| `DELETE /_allauth/browser/v1/auth/session` | Log out |
+| `POST /_allauth/browser/v1/auth/password/request` | `{"email"}`: sends a 6-digit reset code |
+| `POST /_allauth/browser/v1/auth/password/reset` | `{"key", "password"}`: sets the new password |
+
+How the web app uses them:
+
+1. Every request that changes something sends the `X-CSRFToken` header with the
+   value of the `csrftoken` cookie. Without it the answer is 403 `csrf_failed`.
+2. Sign-up answers 401 with the `verify_email` flow pending. The account exists, but
+   she is not logged in until she enters the code from her email.
+3. After login or verification, call `GET /api/v1/me/`. Its `roles` and `next_steps`
+   decide which screen to open: an empty `next_steps` means nothing is waiting.
+4. Signing up with an email that already has an account gives the same answer as a
+   new sign-up, and the owner of that email gets an "account already exists" email.
+   Nobody can use sign-up or password reset to find out who has an account.
+5. After 5 wrong passwords for one email, login is refused for 5 minutes
+   (`too_many_login_attempts`). A login in the first 10 seconds after sign-up is also
+   refused that way, because a fresh code can only be sent once every 10 seconds.
+
+`next_steps` values: `accept_terms`, `identity_check`, `payout_account`,
+`dealer_application`, `await_dealer_decision`. Until the builds that record terms,
+ID checks, payout accounts and dealer applications are done, every step of the
+onboarding she chose is listed until the matching role is granted.
 
 ### Errors
 
@@ -152,6 +200,7 @@ Every error has the same shape, with the content type `application/problem+json`
   "status": 400,
   "code": "validation_error",
   "detail": "One or more fields are invalid.",
+  "instance": "/api/v1/me/",
   "errors": [
     {"field": "address.city", "code": "required", "message": "This field is required."}
   ],
@@ -161,6 +210,7 @@ Every error has the same shape, with the content type `application/problem+json`
 
 - `code` never changes for a given error, so the front end decides what to do from `code`.
 - `detail` and `message` are written for people and may be reworded.
+- `instance` is the path of the request that failed.
 - `errors` appears only when single fields are wrong. `field` is `null` when the
   problem is with the request as a whole. Items in a list show their position: `lines.1.price`.
 
@@ -168,13 +218,14 @@ Every error has the same shape, with the content type `application/problem+json`
 |---|---|---|
 | 400 | `validation_error` | One or more fields are wrong |
 | 400 | `parse_error` | The body is not valid JSON |
-| 400 | a rule's own code, such as `bid_too_low` | A business rule said no |
 | 401 | `not_authenticated` | Not logged in |
 | 403 | `permission_denied` | Logged in, but not allowed |
+| 403 | `csrf_failed` | The `X-CSRFToken` header is missing or wrong |
 | 404 | `not_found` | No such address or object |
 | 405 | `method_not_allowed` | Wrong HTTP method |
 | 409 | `conflict` | The request clashes with the current state |
 | 415 | `unsupported_media_type` | The body is not sent as JSON |
+| 422 | a rule's own code, such as `bid_too_low` | A business rule said no |
 | 429 | `throttled` | Too many requests. See the `Retry-After` header |
 | 500 | `server_error` | Our fault. The cause is in the logs, never in the response |
 
@@ -183,11 +234,13 @@ Every error has the same shape, with the content type `application/problem+json`
 Every list is paged the same way: 25 rows per page, newest first.
 
 ```json
-{"next": "http://.../?cursor=cD0w...", "previous": null, "results": []}
+{"next": "cD0yMDI2LTEx...", "previous": null, "results": []}
 ```
 
-Follow `next` until it is `null`. Ask for a different size with `?page_size=50`
-(100 at most). There are no page numbers.
+`next` and `previous` are cursors, not links. To get the next page, send the same
+request again with `?cursor=<next>`. Stop when `next` is `null`. Ask for a different
+size with `?page_size=50` (100 at most), and send it again with every page.
+There are no page numbers.
 
 ### Request IDs
 
@@ -209,6 +262,9 @@ Servers use `configurations.settings.production` (or `staging`).
 | `DJANGO_SECRET_KEY` | everywhere | Long random text used for signing |
 | `DJANGO_ALLOWED_HOSTS` | staging, production | Host names the API answers to, comma separated |
 | `DJANGO_CSRF_TRUSTED_ORIGINS` | staging, production | Front-end addresses allowed to send forms, comma separated |
+| `DJANGO_FRONTEND_URL` | staging, production | The web app's address, used for links in emails. Default `http://localhost:3000` |
+| `DJANGO_DEFAULT_FROM_EMAIL` | staging, production | Sender of every email, such as `Samwab <no-reply@samwab.com>` |
+| `DJANGO_EMAIL_HOST`, `DJANGO_EMAIL_PORT`, `DJANGO_EMAIL_USER`, `DJANGO_EMAIL_PASSWORD`, `DJANGO_EMAIL_USE_TLS` | staging, production | The email provider's SMTP details. Port defaults to 587 and TLS to on |
 
 Secrets never go into Git. `.env` is ignored, and `.env.example` lists every variable.
 
@@ -220,4 +276,18 @@ Secrets never go into Git. `.env` is ignored, and `.env.example` lists every var
 
 ## Build status
 
-Last build: 04, custom user (email login, first database migration, admin screens).
+Last build: 05, sign-up and login (allauth, 6-digit email codes, `/api/v1/me/`, roles).
+
+## Build history
+
+One line per build, newest last. Each build is one feature, merged into `dev`.
+
+| Build | Date | What it added |
+|---|---|---|
+| 00 | 14 Nov 2026 | Project skeleton: settings per environment, requirements, Ruff, mypy, pytest, CI, health endpoint |
+| 02 | 14 Nov 2026 | Core types: UUID version 7 IDs, `BaseModel`, `Money`, policy values |
+| 03 | 14 Nov 2026 | API basics: one error format, cursor paging, request IDs, JSON logs, API docs |
+| 04 | 14 Nov 2026 | Custom user: email login, lowercase emails, first migration, admin screens |
+| 05 | 17 Nov 2026 | Sign-up and login with django-allauth, 6-digit email codes, password reset, `GET`/`PATCH /api/v1/me/`, role groups, `signup_intent`, Argon2, JSON CSRF errors, 422 for business rules, bare paging cursors |
+
+Build 01 (PostgreSQL on Neon) runs later, just before build 09.

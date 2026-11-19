@@ -8,7 +8,7 @@ from apps.core.exceptions import AppError, ConflictError, NotFoundError, Permiss
 @pytest.mark.parametrize(
     ("error_class", "status", "code"),
     [
-        (AppError, 400, "error"),
+        (AppError, 422, "error"),
         (NotFoundError, 404, "not_found"),
         (PermissionDeniedError, 403, "permission_denied"),
         (ConflictError, 409, "conflict"),
@@ -51,7 +51,7 @@ def test_a_subclass_sets_its_own_code_and_message() -> None:
 
     error = BidTooLowError()
 
-    assert (error.status_code, error.code) == (400, "bid_too_low")
+    assert (error.status_code, error.code) == (422, "bid_too_low")
     assert str(error) == "The bid is below the lowest amount allowed."
 
 

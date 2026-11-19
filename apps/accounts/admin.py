@@ -26,9 +26,9 @@ class UserAdmin(DjangoUserAdmin):  # type: ignore[type-arg]
 
     ordering = ("-id",)
     list_display = ("email", "first_name", "last_name", "country", "is_staff", "is_active")
-    list_filter = ("is_staff", "is_superuser", "is_active", "is_house_account")
+    list_filter = ("signup_intent", "is_staff", "is_superuser", "is_active", "is_house_account")
     search_fields = ("email", "first_name", "last_name")
-    readonly_fields = ("id", "last_login", "created_at", "updated_at")
+    readonly_fields = ("id", "signup_intent", "last_login", "created_at", "updated_at")
 
     fieldsets = (
         (None, {"fields": ("id", "email", "password")}),
@@ -38,7 +38,15 @@ class UserAdmin(DjangoUserAdmin):  # type: ignore[type-arg]
         ),
         (
             "Account",
-            {"fields": ("is_active", "is_house_account", "verification_tier", "anonymised_at")},
+            {
+                "fields": (
+                    "is_active",
+                    "signup_intent",
+                    "is_house_account",
+                    "verification_tier",
+                    "anonymised_at",
+                )
+            },
         ),
         (
             "Staff access",

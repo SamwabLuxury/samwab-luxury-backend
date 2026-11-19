@@ -100,3 +100,34 @@ def test_a_user_can_be_put_in_a_staff_group() -> None:
 
     assert list(user.groups.all()) == [reviewers]
     assert list(reviewers.user_set.all()) == [user]
+
+
+def test_signup_intent_defaults_to_buyer() -> None:
+    assert User(email="ada@example.com").signup_intent == "buyer"
+
+
+@pytest.mark.django_db
+def test_database_refuses_an_unknown_signup_intent() -> None:
+    with pytest.raises(IntegrityError), transaction.atomic():
+        User(email="ada@example.com", signup_intent="admin").save()
+
+    assert User.objects.count() == 0
+
+
+def test_passwords_are_hashed_with_argon2_outside_tests() -> None:
+    """Tests use a fast hash on purpose; real settings must put Argon2 first."""
+    from configurations.settings import base
+
+    assert base.PASSWORD_HASHERS[0] == "django.contrib.auth.hashers.Argon2PasswordHasher"
+
+
+def test_argon2_works_on_this_machine() -> None:
+    """The argon2-cffi package is installed and Django's Argon2 hasher can use it."""
+    from django.contrib.auth.hashers import Argon2PasswordHasher
+
+    hasher = Argon2PasswordHasher()
+    hashed = hasher.encode(PASSWORD, hasher.salt())
+
+    assert hashed.startswith("argon2$")
+    assert hasher.verify(PASSWORD, hashed) is True
+    assert hasher.verify(PASSWORD + "x", hashed) is False
