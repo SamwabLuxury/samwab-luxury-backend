@@ -3,6 +3,7 @@
 from django.core.exceptions import PermissionDenied
 from django.http import Http404, HttpRequest, HttpResponse
 from django.urls import path
+from django.views.decorators.csrf import ensure_csrf_cookie
 from rest_framework import exceptions, serializers
 from rest_framework.permissions import AllowAny
 from rest_framework.request import Request
@@ -116,6 +117,12 @@ def plain_crash(request: HttpRequest) -> HttpResponse:
     raise RuntimeError("secret-database-password")
 
 
+@ensure_csrf_cookie
+def plain_form(request: HttpRequest) -> HttpResponse:
+    """A plain Django view, so Django's CSRF check applies (DRF views skip it)."""
+    return HttpResponse("ok")
+
+
 urlpatterns = [
     path("api/v1/validate/", ValidateView.as_view()),
     path("api/v1/many/", ManyView.as_view()),
@@ -131,6 +138,8 @@ urlpatterns = [
     path("api/v1/custom-message/", CustomMessageView.as_view()),
     path("api/v1/crash/", CrashView.as_view()),
     path("pages/crash/", plain_crash),
+    path("api/v1/plain-form/", plain_form),
+    path("pages/plain-form/", plain_form),
 ]
 
 # The same handlers the real project uses (configurations/urls.py).

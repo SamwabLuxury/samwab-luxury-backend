@@ -92,12 +92,12 @@ def test_following_next_visits_every_row_once_in_order(
     client: Client, items: list[PageItem]
 ) -> None:
     seen: list[str] = []
-    url: str | None = LIST_URL
-    pages = 0
-    while url is not None:
-        page = client.get(url).json()
+    page = client.get(LIST_URL).json()
+    seen.extend(names(page))
+    pages = 1
+    while page["next"] is not None:
+        page = client.get(LIST_URL, {"cursor": page["next"]}).json()
         seen.extend(names(page))
-        url = page["next"]
         pages += 1
 
     assert pages == 6  # 130 rows, 25 per page
@@ -106,11 +106,24 @@ def test_following_next_visits_every_row_once_in_order(
 
 def test_previous_link_goes_back_to_the_first_page(client: Client, items: list[PageItem]) -> None:
     first = client.get(LIST_URL).json()
-    second = client.get(first["next"]).json()
+    second = client.get(LIST_URL, {"cursor": first["next"]}).json()
 
-    back = client.get(second["previous"]).json()
+    back = client.get(LIST_URL, {"cursor": second["previous"]}).json()
 
     assert names(back) == names(first)
+
+
+def test_next_and_previous_are_cursors_not_links(client: Client, items: list[PageItem]) -> None:
+    """The contract: the front end sends next back as ?cursor=, it never follows a URL."""
+    first = client.get(LIST_URL).json()
+    second = client.get(LIST_URL, {"cursor": first["next"]}).json()
+
+    for cursor in (first["next"], second["previous"]):
+        assert isinstance(cursor, str)
+        assert cursor
+        assert "/" not in cursor
+        assert "?" not in cursor
+        assert "http" not in cursor
 
 
 def test_page_size_can_be_chosen(client: Client, items: list[PageItem]) -> None:
@@ -140,7 +153,7 @@ def test_new_rows_do_not_shift_the_pages_already_being_read(
     first = client.get(LIST_URL).json()
     PageItem.objects.create(name="brand-new")
 
-    second = client.get(first["next"]).json()
+    second = client.get(LIST_URL, {"cursor": first["next"]}).json()
 
     assert names(second) == [f"item-{number:03d}" for number in range(104, 79, -1)]
     assert "brand-new" not in names(second)
@@ -169,3 +182,16 @@ def test_last_page_has_no_next_link(client: Client, items: list[PageItem]) -> No
 
     assert names(page) == ["item-001", "item-000"]
     assert page["next"] is None
+
+
+def test_the_api_description_calls_next_and_previous_cursors() -> None:
+    from apps.core.api.pagination import CursorPagination
+
+    schema = CursorPagination().get_paginated_response_schema({"type": "object"})
+
+    for key in ("next", "previous"):
+        described = schema["properties"][key]
+        assert described["type"] == "string"
+        assert described["nullable"] is True
+        assert "?cursor=" in described["description"]
+    assert "results" in schema["properties"]

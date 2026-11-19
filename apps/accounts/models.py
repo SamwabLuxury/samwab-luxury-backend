@@ -6,6 +6,7 @@ from django.core.validators import RegexValidator
 from django.db import models
 from django.db.models.functions import Lower
 
+from apps.accounts.enums import SignupIntent
 from apps.accounts.managers import UserManager, normalise_email
 from apps.core.models import BaseModel
 
@@ -15,9 +16,9 @@ class User(AbstractBaseUser, PermissionsMixin, BaseModel):
 
     People log in with their email address; there is no username.
 
-    A user's role is not stored here. Being an owner or a dealer is worked out
-    from what the person has completed (payout setup, ID check, approval), so
-    one account can buy, sell and bid. Staff permissions use Django groups.
+    Every account can buy. Other roles (owner, dealer and the staff roles) are
+    Django groups, added when the person has earned them; see ``roles.py``.
+    One account can therefore buy, sell and bid.
     """
 
     email = models.EmailField(unique=True, max_length=254)
@@ -42,6 +43,12 @@ class User(AbstractBaseUser, PermissionsMixin, BaseModel):
     verification_tier = models.PositiveSmallIntegerField(
         default=0, help_text="How far this person's identity has been checked. 0 means not yet."
     )
+    signup_intent = models.CharField(
+        max_length=10,
+        choices=SignupIntent.choices,
+        default=SignupIntent.BUYER,
+        help_text="The sign-up page she came through. It starts her onboarding; it grants no role.",
+    )
     anonymised_at = models.DateTimeField(
         null=True, blank=True, help_text="Set when personal details were removed on request."
     )
@@ -58,6 +65,10 @@ class User(AbstractBaseUser, PermissionsMixin, BaseModel):
             # the column, "Ada@x.com" and "ada@x.com" can never be two accounts.
             models.CheckConstraint(
                 condition=models.Q(email=Lower("email")), name="users_email_is_lowercase"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(signup_intent__in=SignupIntent.values),
+                name="users_signup_intent_is_known",
             ),
         )
 

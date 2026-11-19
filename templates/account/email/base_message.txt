@@ -1,0 +1,6 @@
+{% autoescape off %}Hello from Samwab Luxury.
+
+{% block content %}{% endblock content %}
+
+Samwab Luxury
+{% endautoescape %}

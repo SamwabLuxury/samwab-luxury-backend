@@ -12,9 +12,9 @@ Each app adds its own errors by extending these, for example::
 
 
 class AppError(Exception):
-    """A request we understood but will not carry out. Becomes HTTP 400."""
+    """A request we understood but a business rule says no. Becomes HTTP 422."""
 
-    status_code = 400
+    status_code = 422
     code = "error"
     message = "The request could not be completed."
 
