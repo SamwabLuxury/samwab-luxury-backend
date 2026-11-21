@@ -39,6 +39,7 @@ LOCAL_APPS = [
     "apps.core",
     "apps.accounts",
     "apps.audit",
+    "apps.idempotency",
     "apps.catalog",
     "apps.pieces",
 ]

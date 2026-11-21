@@ -28,7 +28,7 @@ Django API. The front ends live in their own repository.
 6. [Checks to run before you push](#checks-to-run-before-you-push)
 7. [Git and build scripts](#git-and-build-scripts)
 8. [When something goes wrong](#when-something-goes-wrong)
-9. Reference: [project structure](#project-structure), [apps](#apps), [shared building blocks](#shared-building-blocks), [API](#api), [staff roles and the audit log](#staff-roles-and-the-audit-log), [settings](#settings-and-environment-variables), [build history](#build-history)
+9. Reference: [project structure](#project-structure), [apps](#apps), [shared building blocks](#shared-building-blocks), [API](#api), [staff roles and the audit log](#staff-roles-and-the-audit-log), [safe retries](#safe-retries-the-idempotency-key-header), [settings](#settings-and-environment-variables), [build history](#build-history)
 
 ## Set up your machine
 
@@ -233,6 +233,7 @@ Run these with the virtual environment active, from the project folder.
 | A Python shell with the app loaded | `python manage.py shell` |
 | Start the local database again from empty | Stop `runserver`, delete `db.sqlite3`, then `python manage.py migrate` and `python manage.py createsuperuser` |
 | Update packages after a pull | `python -m pip install -r requirements/dev.txt` |
+| Delete idempotency keys older than 24 hours | `python manage.py delete_expired_idempotency_keys` (the scheduler runs it from build 09) |
 
 Tests use their own settings (`configurations.settings.test`) and a fresh, empty
 database every run. They never touch your `db.sqlite3`.
@@ -393,6 +394,9 @@ the branch and the database file. The full log is saved in `~/samwab-build-logs/
 | A staff member logs in and sees "You don't have permission to view or edit anything" | **Staff status** is ticked but they hold no role | Add them to a role group (`catalog_editor`, `intake_staff`) on their user page |
 | A role's permissions you changed by hand in the admin are back as before | Role permissions come from code and are set again on every `migrate` | Change `apps/<app>/permissions.py` in a pull request instead |
 | `AuditEventIsFinalError` | Code tried to change or delete an audit event | Audit events are never changed. Record a new event instead |
+| `400` with `idempotency_key_missing` or `idempotency_key_invalid` | A create request without a good `Idempotency-Key` header | Send a new random key (a UUID) in `Idempotency-Key` |
+| `422` with `idempotency_key_reused` | The same key was sent with a different body or to another address | Make a new key for each new action; reuse a key only to retry the same request |
+| `409` with `idempotency_key_in_progress` | The first request with that key is still running | Wait a moment and send it again: you will get its answer |
 | `NotSupportedError: FOR UPDATE cannot be applied to the nullable side of an outer join` (PostgreSQL only) | A row lock on a query that joins optional related rows | Lock only the main table: `select_for_update(of=("self",))` |
 | `403` with `"code": "csrf_failed"` | A request that changes something was sent without the `X-CSRFToken` header | Call `/_allauth/browser/v1/config` first and send the `csrftoken` cookie's value in `X-CSRFToken` |
 | `400` with `too_many_login_attempts` | 5 wrong passwords for that email, or a login in the first 10 seconds after sign-up | Wait 5 minutes (or 10 seconds after sign-up) |
@@ -411,6 +415,7 @@ apps/                 our code, one folder per business area
     roles.py          the role names (each one is a Django group)
     permissions.py    sets each role's admin permissions from code after every migrate
   audit/              the audit log: one append-only row for every staff change
+  idempotency/        Idempotency-Key handling: a create request sent twice runs once
   catalog/            brands, categories, designs, materials, capture protocols and
                       comparable sales; the catalog manager
     models/           one file per subject; import models from apps.catalog.models
@@ -462,6 +467,7 @@ Other files at the top of the repository:
 | App | What it owns |
 |---|---|
 | `accounts` | Users. People log in with their email; there is no username. Roles are Django groups, and each staff role's admin permissions are set from code. |
+| `idempotency` | The `Idempotency-Key` header (`idempotency_keys`): a create request sent twice does its work once, and the retry gets the first answer. Views use it with `@idempotent`. |
 | `audit` | The audit log (`audit_events`): who changed what, when and from where. Rows are only ever added. Other apps write to it from their services. |
 | `catalog` | What can be sold: brands, categories, named designs (such as the Kelly 28) and materials; the capture protocols staff follow for each category or design; comparable sales for fair prices. Staff run it in the admin site; the API only reads it. |
 | `pieces` | Pieces: one row per physical object Samwab holds, sells or has checked, with its materials, its custody status (where it is) and its verification status (is it authentic). Staff register pieces in the admin site. |
@@ -482,6 +488,7 @@ Every app uses these, so learn them first. They live in `apps/core`.
 | Rules for flexible JSON data | `from apps.core.json_schema import attribute_errors, schema_errors` | Categories and designs describe piece attributes as JSON Schema (draft 2020-12). `schema_errors` checks a schema; `attribute_errors` lists every problem in some data, with where it is. |
 | A list in another order | `from apps.core.api.pagination import ordered_by` | `pagination_class = ordered_by("slug")`. The first field must be unique per row (see Lists and paging). |
 | A change made by staff | `from apps.audit import services as audit` | In the service, inside its transaction: `before = audit.snapshot(row)`, make the change, then `audit.record_saved(row, before=before, by=staff)`. For other actions, `audit.record("retired", row, by=staff, changes=...)`. |
+| A create endpoint (order, bid, listing, refund, payout) | `from apps.idempotency.api import idempotent` | Put `@idempotent` on the view's `post`. It requires the `Idempotency-Key` header, replays the first answer on a retry and adds the header to the API description. |
 | A new staff screen | `apps/<app>/permissions.py` | Say which roles may `add`, `change`, `delete` or `view` each model, and connect it in the app's `ready()` (see `apps/catalog/apps.py`). |
 
 ```python
@@ -761,6 +768,31 @@ stands on the first field only, so that field must be unique per row. When the
 display order is not unique, a selector adds a unique `position` value to sort on
 (see `apps/catalog/selectors.py`); otherwise the previous page can skip rows.
 
+### Safe retries: the Idempotency-Key header
+
+Phones lose signal and people double-click. So every request that creates an
+order, bid, listing, refund or payout carries an `Idempotency-Key` header: a new
+random value (a UUID is best) for each action the person takes. If the app is not
+sure the request arrived, it sends **the same request with the same key** again.
+
+| What happens | Answer |
+|---|---|
+| First request with a key | Runs normally |
+| Same key, same body, after the first finished | The first answer again (same status and body), with `Idempotent-Replayed: true`. Nothing runs twice |
+| Same key while the first is still running | `409 idempotency_key_in_progress`. Wait and retry |
+| Same key, different body or address | `422 idempotency_key_reused`. Make a new key |
+| No key, or a bad one | `400 idempotency_key_missing` or `idempotency_key_invalid` (1 to 255 letters, digits or symbols, no spaces; `"quoted"` is fine) |
+| The first request failed (an error, or a `5xx`) | The key is freed, because nothing was saved: send it again |
+
+Keys belong to the logged-in person and last 24 hours; after that the same key
+counts as new. The rules follow the IETF draft *The Idempotency-Key HTTP Header
+Field* and Stripe's practice.
+
+For developers: put `@idempotent` (`apps/idempotency/api.py`) on the view's
+`post`. The view's work and the stored answer are saved in one transaction, so a
+crash never leaves an answer without its work, or work without its answer. No
+endpoint uses it yet: listings, bids and orders will.
+
 ### Request IDs
 
 Every response has an `X-Request-ID` header, and errors repeat it as `request_id`.
@@ -793,7 +825,7 @@ On your own machine, only `DJANGO_SECRET_KEY` is needed.
 The README is updated in every build.
 
 
-Last build: 07, audit and staff roles (the audit log, admin permissions for `catalog_editor` and `intake_staff`).
+Last build: 08, idempotency (the `Idempotency-Key` header for create endpoints).
 
 ## Build history
 
@@ -811,6 +843,7 @@ One line per build, newest last. Each build is one feature, merged into `dev`.
 | 13a | 21 Nov 2026 | Full README: setup from scratch, run, try it, everyday commands, how we write code and TDD, checks, Git and build scripts, troubleshooting |
 | 14 | 21 Nov 2026 | Pieces: `pieces` and `piece_materials`; custody and verification state machines; attribute checks against JSON Schema; piece screens in the admin site; `StateMachine` and JSON Schema helpers in core |
 | 07 | 21 Nov 2026 | Audit and staff roles: `audit_events` (append-only, with a PostgreSQL trigger) written by every catalog, piece and account change staff make; admin permissions for `catalog_editor` and `intake_staff`, set from code after every `migrate`; the caller's IP address for the audit log |
+| 08 | 21 Nov 2026 | Idempotency: `idempotency_keys` and the `@idempotent` decorator (`Idempotency-Key` required, first answer replayed for 24 hours, 400/409/422 as in the IETF draft), a command to delete expired keys |
 
 Builds run in the order the roadmap sets, so numbers can skip: builds 12 to 14 came
-before 06 to 11 to start on what buyers see, then 07. Build 01 (PostgreSQL on Neon) runs just before build 09.
+before 06 to 11 to start on what buyers see, then 07 and 08. Build 01 (PostgreSQL on Neon) runs just before build 09.
