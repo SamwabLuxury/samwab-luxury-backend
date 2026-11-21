@@ -359,3 +359,24 @@ def test_a_design_attribute_schema_must_be_a_json_object(value: object) -> None:
         design.full_clean()
 
     assert "attribute_schema" in messages(error)
+
+
+@pytest.mark.parametrize("model", ["category", "design"])
+def test_an_attribute_schema_must_be_a_real_json_schema(model: str) -> None:
+    """Pieces are checked against it, so a broken schema would refuse every piece."""
+    broken = {"type": "banana"}
+    if model == "category":
+        row: models.Model = Category(name="Bags", slug="bags", attribute_schema=broken)
+    else:
+        row = ProductModel(
+            name="Kelly 28",
+            slug="kelly-28",
+            brand=make_brand(),
+            category=make_category(),
+            attribute_schema=broken,
+        )
+
+    with pytest.raises(ValidationError) as error:
+        row.full_clean()
+
+    assert "is not valid under any of the given schemas" in messages(error)["attribute_schema"][0]
