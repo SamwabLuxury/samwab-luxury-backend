@@ -8,10 +8,11 @@ sorts in display order. The API pages on it, because a cursor needs a unique
 value to stand on (see ``apps/core/api/pagination.py``).
 """
 
-from django.db.models import CharField, QuerySet, Value
+from django.db.models import CharField, Prefetch, QuerySet, Value
 from django.db.models.functions import Cast, Concat, LPad
 
-from apps.catalog.models import Brand, Category, ProductModel
+from apps.catalog.enums import ProtocolStatus
+from apps.catalog.models import Brand, CaptureProtocol, CaptureShot, Category, ProductModel
 
 
 def public_brands() -> QuerySet[Brand]:
@@ -42,3 +43,20 @@ def public_product_models(
     if category_slug:
         designs = designs.filter(category__slug=category_slug)
     return designs
+
+
+def active_protocol_for(
+    *, category: Category, product_model: ProductModel | None = None
+) -> CaptureProtocol | None:
+    """The protocol staff follow for a piece: its design's own, else its category's default.
+
+    Returns ``None`` when neither has an active protocol. Shots come in capture order.
+    """
+    active = CaptureProtocol.objects.filter(
+        category=category, status=ProtocolStatus.ACTIVE
+    ).prefetch_related(Prefetch("shots", queryset=CaptureShot.objects.order_by("sort_order")))
+    if product_model is not None:
+        own = active.filter(product_model=product_model).first()
+        if own is not None:
+            return own
+    return active.filter(product_model__isnull=True).first()
