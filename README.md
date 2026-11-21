@@ -17,45 +17,369 @@ Django API. The front ends live in their own repository.
 | Tests | pytest, pytest-django |
 | Code quality | Ruff (lint and format), mypy |
 
-## Run it on your machine
+## Contents
 
-You need Python 3.13 and Git. On Windows, use Git Bash.
+1. [Set up your machine](#set-up-your-machine) (first time only, about 15 minutes)
+2. [Run the app](#run-the-app)
+3. [Try it](#try-it): the admin site, the API docs, sign-up from the command line
+4. [Everyday commands](#everyday-commands)
+5. [How we write code](#how-we-write-code): layers, test-driven development, test rules
+6. [Checks to run before you push](#checks-to-run-before-you-push)
+7. [Git and build scripts](#git-and-build-scripts)
+8. [When something goes wrong](#when-something-goes-wrong)
+9. Reference: [project structure](#project-structure), [apps](#apps), [shared building blocks](#shared-building-blocks), [API](#api), [settings](#settings-and-environment-variables), [build history](#build-history)
+
+## Set up your machine
+
+Do this once per computer. Every command below is typed in a terminal: on Windows
+use **Git Bash** (it comes with Git), on macOS or Linux use the normal terminal.
+
+### 1. Install the tools
+
+| Tool | Why | Get it |
+|---|---|---|
+| Git | Get the code, save your work | https://git-scm.com/downloads (on Windows this also installs Git Bash) |
+| Python 3.13 | Runs the app | https://www.python.org/downloads/ (choose 3.13.x). On Windows, tick **"Add python.exe to PATH"** in the installer |
+| A code editor | Read and change the code | VS Code is what the team uses: https://code.visualstudio.com/ |
+
+Check them. Each command should print a version:
 
 ```bash
-python -m venv .venv
-source .venv/Scripts/activate        # macOS and Linux: source .venv/bin/activate
+git --version
+py -3.13 --version        # Windows
+python3.13 --version      # macOS and Linux
+```
+
+You do not need to install a database, Docker or Redis yet. The local database is
+a single file that Django creates for you.
+
+### 2. Get the code
+
+```bash
+cd ~/Desktop
+git clone <repository address> samwab    # the address is on the repository page
+cd samwab
+git checkout dev                           # all work starts from dev
+```
+
+Until the GitHub repository exists, ask the lead engineer for a copy of the folder
+and put it at `~/Desktop/samwab`.
+
+### 3. Make the virtual environment
+
+A virtual environment (`.venv`) keeps this project's packages apart from the rest
+of your computer. Create it once, inside the project folder:
+
+```bash
+py -3.13 -m venv .venv            # Windows
+python3.13 -m venv .venv          # macOS and Linux
+```
+
+Then **activate it**. Do this in every new terminal window, before any `python` or
+`pip` command:
+
+```bash
+source .venv/Scripts/activate     # Windows (Git Bash)
+source .venv/bin/activate         # macOS and Linux
+```
+
+Your prompt now starts with `(.venv)`. Check that it is the right Python:
+
+```bash
+python --version                  # must say Python 3.13.x
+```
+
+### 4. Install the packages
+
+```bash
+python -m pip install --upgrade pip
 python -m pip install -r requirements/dev.txt
-cp .env.example .env                 # then set DJANGO_SECRET_KEY to any long random text
-python manage.py migrate             # creates the local database (db.sqlite3)
-python manage.py createsuperuser     # your own admin login: an email and a password
+```
+
+`requirements/base.txt` is what the app needs everywhere; `dev.txt` adds the test
+and code-quality tools; `prod.txt` adds the web server used on servers. Versions are
+pinned, so everyone gets exactly the same packages.
+
+### 5. Create your `.env` file
+
+The app reads its secret settings from a file called `.env`, which Git ignores.
+
+```bash
+cp .env.example .env
+python -c "import secrets; print(secrets.token_urlsafe(50))"
+```
+
+Open `.env` in your editor and replace `change-me` with the long text the second
+command printed. Nothing else is needed on your machine.
+
+### 6. Create the database and your admin login
+
+```bash
+python manage.py migrate            # creates db.sqlite3 with every table
+python manage.py createsuperuser    # asks for your email and a password
+```
+
+The superuser is your own login for the admin site. Use your real email; there is
+no username.
+
+### 7. Turn on the pre-commit checks (optional, recommended)
+
+```bash
+pre-commit install
+```
+
+From now on, every `git commit` first runs the linter and formatter on the files
+you changed, so badly formatted code never reaches a commit.
+
+## Run the app
+
+```bash
+cd ~/Desktop/samwab
+source .venv/Scripts/activate       # macOS and Linux: source .venv/bin/activate
 python manage.py runserver
 ```
 
-Open http://127.0.0.1:8000/api/v1/health/ and you should see `{"status": "ok"}`.
-Log in to the admin site at http://127.0.0.1:8000/admin/ with the email and password
-you just chose.
+Leave that terminal open; the app runs until you press `Ctrl+C`. Open a second
+terminal for anything else (and activate the virtual environment there too).
 
-Activate the virtual environment (`source .venv/Scripts/activate`) in every new
-terminal window before you run `python` or `pip`.
+| Open | What you see |
+|---|---|
+| http://127.0.0.1:8000/api/v1/health/ | `{"status": "ok"}`: the API is running |
+| http://127.0.0.1:8000/admin/ | The admin site. Log in with your superuser email and password |
+| http://127.0.0.1:8000/api/v1/docs/ | Every endpoint of our API, with a "Try it out" button |
+| http://127.0.0.1:8000/_allauth/openapi.html | The sign-up and login endpoints (django-allauth) |
+| http://127.0.0.1:8000/api/v1/schema/ | The OpenAPI file. Import it into Postman |
 
-The local database is a SQLite file for now. It is ignored by Git, so every
-developer has their own. It moves to PostgreSQL in a later build.
+On your machine:
 
-Emails, such as sign-up codes, are printed in the terminal where `runserver` runs.
-Nothing is sent from your machine.
+- `manage.py` uses `configurations.settings.local`: debug pages are on and DRF's
+  browsable pages are shown.
+- Emails, such as sign-up codes, are **printed in the `runserver` terminal**.
+  Nothing is sent.
+- The database is the file `db.sqlite3`. It is yours alone; Git ignores it.
+  It moves to PostgreSQL (Neon) in build 01.
+
+## Try it
+
+### The catalog, in the admin site
+
+1. Open http://127.0.0.1:8000/admin/catalog/brand/add/, type `Hermès` and save.
+   The slug (`hermes`) fills itself in.
+2. Add a category (`Bags`) and a design (`Kelly 28`, brand Hermès, category Bags).
+3. Open http://127.0.0.1:8000/api/v1/brands/ and
+   http://127.0.0.1:8000/api/v1/product-models/?brand=hermes to see them in the API.
+
+### Sign up and log in from the command line
+
+The web app does exactly this. Run it in a second terminal while `runserver` is
+running (Git Bash on Windows includes `curl`):
+
+```bash
+API=http://127.0.0.1:8000
+
+# 1. Get the CSRF cookie. The web app calls this once when it loads.
+curl -s -c cookies.txt $API/_allauth/browser/v1/config > /dev/null
+TOKEN=$(grep csrftoken cookies.txt | awk '{print $7}')
+
+# 2. Sign up. The answer is 401 with "verify_email" pending: that is expected.
+curl -s -b cookies.txt -c cookies.txt -H "X-CSRFToken: $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"email": "you@example.com", "password": "correct-horse-battery-9"}' \
+  $API/_allauth/browser/v1/auth/signup
+
+# 3. Find the 6-digit code in the runserver terminal, then:
+curl -s -b cookies.txt -c cookies.txt -H "X-CSRFToken: $TOKEN" \
+  -H "Content-Type: application/json" -d '{"key": "123456"}' \
+  $API/_allauth/browser/v1/auth/email/verify
+
+# 4. You are logged in. See your own account:
+curl -s -b cookies.txt $API/api/v1/me/
+```
+
+Delete `cookies.txt` when you are done. Section [Sign-up and login](#sign-up-and-login-django-allauth)
+explains every endpoint.
+
+## Everyday commands
+
+Run these with the virtual environment active, from the project folder.
+
+| Task | Command |
+|---|---|
+| Start the app | `python manage.py runserver` |
+| Start it on another port | `python manage.py runserver 8001` |
+| Run every test | `python -m pytest` |
+| Run one test file | `python -m pytest apps/catalog/tests/test_api.py` |
+| Run one test | `python -m pytest apps/catalog/tests/test_api.py::test_brands_are_public_and_match_the_contract` |
+| Run tests whose name matches | `python -m pytest -k slug` |
+| Run only the tests that failed last time | `python -m pytest --lf` |
+| Stop at the first failure, show prints | `python -m pytest -x -s` |
+| Tests with coverage | `python -m pytest --cov --cov-report=term-missing` |
+| Make migrations after changing a model | `python manage.py makemigrations` |
+| Apply migrations | `python manage.py migrate` |
+| See which migrations are applied | `python manage.py showmigrations` |
+| A Python shell with the app loaded | `python manage.py shell` |
+| Start the local database again from empty | Stop `runserver`, delete `db.sqlite3`, then `python manage.py migrate` and `python manage.py createsuperuser` |
+| Update packages after a pull | `python -m pip install -r requirements/dev.txt` |
+
+Tests use their own settings (`configurations.settings.test`) and a fresh, empty
+database every run. They never touch your `db.sqlite3`.
+
+## How we write code
+
+### Where code goes
+
+Each business area is one app under `apps/`. Inside an app, code is split by job,
+and each layer only calls the layers below it:
+
+```
+api/views.py      thin: check the input, call one selector or service, return the result
+api/serializers.py  the shape of the JSON in and out; no business rules
+services.py       every write and every business rule (raises AppError when a rule says no)
+selectors.py      every read the API needs (what the public may see, in which order)
+models.py         tables, database constraints and simple field checks in clean()
+```
+
+Rules:
+
+- No business logic in views, serializers, `save()` or signals. If you are writing
+  an `if` about a business rule in a view, it belongs in a service.
+- Apps talk to each other only through their services and selectors.
+- A rule the database can enforce (unique, check) is also a database constraint,
+  so no code path can break it.
+- Money is always `Money` (whole cents). Time limits and rates come from `policy`.
+- Staff write through services too: the admin's `save_model` and actions call them.
+
+### Test-driven development (TDD)
+
+We write the test **before** the code. Every change follows the same loop:
+
+1. **Red.** Write a test that describes one behaviour, run it, and watch it fail.
+   A test you have never seen fail proves nothing.
+2. **Green.** Write the simplest code that makes it pass. Run the whole suite.
+3. **Refactor.** Clean up the code and the test while everything stays green.
+4. Repeat for the next behaviour, then the edge cases.
+
+A real example from the catalog:
+
+```python
+# 1. Red: apps/catalog/tests/test_api.py. Fails: there is no /api/v1/brands/ yet.
+def test_brands_are_in_alphabetical_order_and_leave_out_retired_ones(client):
+    for name in ("Hermès", "Chanel", "Rolex"):
+        make_brand(name)
+    make_brand("Ancienne Maison", is_active=False)
+
+    rows = client.get("/api/v1/brands/").json()["results"]
+
+    assert [row["slug"] for row in rows] == ["chanel", "hermes", "rolex"]
+
+
+# 2. Green: the selector decides what the public sees, the view stays thin.
+def public_brands():
+    return Brand.objects.filter(is_active=True)
+```
+
+Write the test so its name reads as a sentence about the behaviour
+(`test_a_slug_cannot_change_after_it_is_created`), and lay out its body in three
+parts separated by blank lines: set up, act, check.
+
+### Test rules
+
+- Tests live next to the code: `apps/<app>/tests/test_<subject>.py`.
+- Make rows with the app's helpers, such as `make_brand()` or `make_protocol()` in
+  `apps/catalog/tests/helpers.py`. They fill in sensible defaults, so a test only
+  names what it cares about. Add a helper when you add a model.
+- Mark tests that use the database with `pytestmark = pytest.mark.django_db`.
+- Outside services (Stripe, the model service, email, couriers) are replaced with
+  fakes. Tests never call the internet.
+- Every endpoint is tested for: success, not logged in, wrong role, someone else's
+  object, invalid input, not found, and the same request twice.
+- Think through the edge cases that apply: empty, missing, too long, wrong type,
+  non-English text, zero, negative and very large amounts; an illegal status
+  change; the same action twice; a deadline exactly on time; two requests at once;
+  page boundaries; database constraints.
+- Every bug gets a test that fails without the fix.
+- Coverage of `apps/` is 100%. A line no test reaches is either untested behaviour
+  (write the test) or dead code (delete it).
 
 ## Checks to run before you push
 
+These are exactly what CI (`.github/workflows/ci.yml`) and every build script run.
+All of them must pass.
+
 ```bash
-python -m ruff check .          # lint
-python -m ruff format .         # format
-python -m mypy                  # type check
-python manage.py check          # Django's own checks
-python -m pytest                # tests
+python -m ruff check .                                       # lint
+python -m ruff format --check .                              # format (run without --check to fix)
+python -m mypy                                               # type check
+python manage.py check                                       # Django's own checks
+python manage.py makemigrations --check --dry-run            # a model change without a migration
+python manage.py spectacular --validate --fail-on-warn > /dev/null   # the API description builds
+python -m pytest --cov --cov-report=term-missing             # tests and coverage
 ```
 
-To run the lint and format checks automatically before every commit, run
-`pre-commit install` once.
+## Git and build scripts
+
+### Branches
+
+- `main`: production.
+- `dev`: deployed first. All work merges here.
+- `feature/<short-name>`: one branch per task or build, made from `dev`.
+
+```bash
+git checkout dev
+git checkout -b feature/b14-pieces       # one feature per branch
+# ... write the test, write the code, run the checks ...
+git add .
+git commit -m "Build 14: pieces"
+git checkout dev
+git merge --no-ff feature/b14-pieces -m "Merge build 14: pieces"
+git branch -d feature/b14-pieces
+```
+
+Once the GitHub repository exists, push the feature branch and open a pull request
+into `dev` instead of merging on your machine; CI must be green before merging.
+
+Never commit `.env`, `db.sqlite3` or `.venv`. `.gitignore` already leaves them out.
+
+### Build scripts
+
+The lead engineer receives each build as one script, run from Git Bash:
+
+```bash
+cd ~/Desktop/samwab && git checkout dev && git status --short    # must print nothing
+bash ~/Downloads/build_<number>_<name>.sh
+```
+
+The script:
+
+1. stops before changing anything if there are uncommitted changes, you are not
+   on `dev`, the venv is missing or not Python 3.13, or a file it replaces is not
+   the version it expects;
+2. creates `feature/b<number>-<name>` and writes the files;
+3. installs packages and runs every check above;
+4. applies migrations to your local database only after everything passed;
+5. stops with nothing committed, and prints the commit and merge commands.
+
+On any failure, or `Ctrl+C`, it puts everything back as it found it: the files,
+the branch and the database file. The full log is saved in `~/samwab-build-logs/`.
+
+## When something goes wrong
+
+| What you see | Why | Fix |
+|---|---|---|
+| `ModuleNotFoundError: No module named 'django'` | The virtual environment is not active, or packages are not installed | `source .venv/Scripts/activate`, then `python -m pip install -r requirements/dev.txt` |
+| No `(.venv)` at the start of the prompt | New terminal window | Activate it again (step 3) |
+| `python --version` is not 3.13 | The venv was made with another Python | Delete `.venv`, then repeat steps 3 and 4 with `py -3.13` (Windows) or `python3.13` |
+| `pip` installed packages but Django still cannot be found | `pip` belonged to another Python | Always use `python -m pip ...` with the venv active |
+| `ImproperlyConfigured: Set the DJANGO_SECRET_KEY environment variable` | No `.env` file, or no key in it | Step 5 |
+| `You have unapplied migration(s)` or `no such table` | Someone added a model since your last `migrate` | `python manage.py migrate` |
+| `Error: That port is already in use.` | `runserver` is already running somewhere | Stop the other one with `Ctrl+C`, or use `python manage.py runserver 8001` |
+| The admin login page says the email or password is wrong | Only staff can use the admin; or a typo | `python manage.py createsuperuser` makes a new staff login |
+| `403` with `"code": "csrf_failed"` | A request that changes something was sent without the `X-CSRFToken` header | Call `/_allauth/browser/v1/config` first and send the `csrftoken` cookie's value in `X-CSRFToken` |
+| `400` with `too_many_login_attempts` | 5 wrong passwords for that email, or a login in the first 10 seconds after sign-up | Wait 5 minutes (or 10 seconds after sign-up) |
+| No sign-up code arrives | Emails are not sent from your machine | Look in the `runserver` terminal |
+| A build script says `You have uncommitted changes` | `git status` shows changed files | Commit them, or ask the lead before discarding anything |
+| A build script says a file `is not the version from the last build` | That file was edited by hand | Send that file to the lead engineer; the next script will keep your change |
+| A test fails only on your machine | Usually an old database or old packages | Re-install packages (step 4); tests never use `db.sqlite3`, so check for local changes with `git status` |
 
 ## Project structure
 
@@ -80,18 +404,27 @@ apps/                 our code, one folder per business area
 configurations/       project wiring only
   settings/           base.py plus one file per environment
   urls.py             mounts each app's URLs under /api/v1/
+templates/            email wording (allauth)
 requirements/         base.txt, dev.txt, prod.txt
 .github/workflows/    CI: lint, types, checks and tests on every pull request
 ```
 
-Inside an app, code is split by job:
+A typical app (`apps/catalog/`) holds `models/` (or `models.py`), `enums.py`,
+`exceptions.py`, `selectors.py`, `services.py`, `admin.py`, `api/` (views,
+serializers, URLs), `migrations/` and `tests/`. What each layer does is in
+[Where code goes](#where-code-goes). Files are added when an app needs them, so
+not every app has every file.
 
-- `models.py`: data only.
-- `selectors.py`: reads.
-- `services.py`: writes and business rules.
-- `api/`: thin views that check input, call one service and return the result.
+Other files at the top of the repository:
 
-Files are added when an app needs them, so not every app has every file.
+| File | What it is |
+|---|---|
+| `manage.py` | Django's command line: `runserver`, `migrate`, `shell` and so on |
+| `pyproject.toml` | Settings for Ruff, mypy, pytest and coverage |
+| `.pre-commit-config.yaml` | The checks `pre-commit install` runs before each commit |
+| `.env.example` | Every environment variable, with notes. Copy it to `.env` |
+| `.editorconfig`, `.gitattributes` | Same indentation and line endings on every editor and computer |
+| `templates/` | Our own templates; today the wording of allauth's emails |
 
 ## Apps
 
@@ -112,6 +445,7 @@ Every app uses these, so learn them first. They live in `apps/core`.
 | An amount of money | `from apps.core.money import Money` | Money is whole cents plus a currency. Never use floats or decimals. |
 | A time limit or default rate | `from apps.core import policy` | Read the value from `policy`. Never type the number into your own code. |
 | A business rule that says no | `from apps.core.exceptions import AppError` | Services raise `AppError` (or `NotFoundError`, `PermissionDeniedError`, `ConflictError`). They never build an HTTP response. |
+| A list in another order | `from apps.core.api.pagination import ordered_by` | `pagination_class = ordered_by("slug")`. The first field must be unique per row (see Lists and paging). |
 
 ```python
 from apps.core.money import Money
@@ -328,14 +662,12 @@ Servers use `configurations.settings.production` (or `staging`).
 | `DJANGO_EMAIL_HOST`, `DJANGO_EMAIL_PORT`, `DJANGO_EMAIL_USER`, `DJANGO_EMAIL_PASSWORD`, `DJANGO_EMAIL_USE_TLS` | staging, production | The email provider's SMTP details. Port defaults to 587 and TLS to on |
 
 Secrets never go into Git. `.env` is ignored, and `.env.example` lists every variable.
-
-## Branches
-
-- `main`: production.
-- `dev`: deployed first. All work merges here.
-- `feature/...`: one branch per build, merged into `dev` by pull request.
+On your own machine, only `DJANGO_SECRET_KEY` is needed.
 
 ## Build status
+
+The README is updated in every build.
+
 
 Last build: 13, catalog B (capture protocols and shots, comparable sales).
 
