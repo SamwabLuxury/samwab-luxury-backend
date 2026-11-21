@@ -8,3 +8,7 @@ mypy==2.4.1
 django-stubs==6.1.2
 djangorestframework-stubs==3.18.2
 pre-commit==4.7.0
+# PostgreSQL driver, so tests can also run on PostgreSQL (CI does; see README).
+# The binary package is the psycopg docs' choice for development. Production's
+# choice is made with the production database (build 01).
+psycopg[binary]==3.3.9
