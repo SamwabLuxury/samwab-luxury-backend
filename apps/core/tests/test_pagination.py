@@ -195,3 +195,14 @@ def test_the_api_description_calls_next_and_previous_cursors() -> None:
         assert described["nullable"] is True
         assert "?cursor=" in described["description"]
     assert "results" in schema["properties"]
+
+
+def test_ordered_by_keeps_the_rules_and_changes_only_the_order() -> None:
+    from apps.core.api.pagination import CursorPagination, ordered_by
+
+    by_slug = ordered_by("sort_order", "slug")
+
+    assert issubclass(by_slug, CursorPagination)
+    assert tuple(by_slug.ordering) == ("sort_order", "slug")
+    assert (by_slug.page_size, by_slug.max_page_size) == (25, 100)
+    assert CursorPagination.ordering == "-id"
