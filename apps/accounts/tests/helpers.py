@@ -42,3 +42,19 @@ def pending_flows(response: Any) -> list[str]:
 
 def error_codes(response: Any) -> list[tuple[str | None, str]]:
     return [(error.get("param"), error["code"]) for error in response.json()["errors"]]
+
+
+def make_staff(email: str = "staff@samwab.com", *role_names: str) -> Any:
+    """A staff member who can log in to the admin site, holding the given roles.
+
+    ``create_user`` never makes staff (on purpose), so this sets ``is_staff`` after.
+    """
+    from django.contrib.auth.models import Group
+
+    from apps.accounts.models import User
+
+    user = User.objects.create_user(email, PASSWORD)
+    user.is_staff = True
+    user.save(update_fields=["is_staff"])
+    user.groups.add(*Group.objects.filter(name__in=role_names))
+    return user

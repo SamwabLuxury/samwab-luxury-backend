@@ -38,6 +38,7 @@ THIRD_PARTY_APPS = [
 LOCAL_APPS = [
     "apps.core",
     "apps.accounts",
+    "apps.audit",
     "apps.catalog",
     "apps.pieces",
 ]
@@ -46,6 +47,8 @@ INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 MIDDLEWARE = [
     # First in the list, so the request ID exists before anything else runs.
     "apps.core.request_id.RequestIdMiddleware",
+    # The caller's IP address, for the audit log.
+    "apps.core.client_ip.ClientIpMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",

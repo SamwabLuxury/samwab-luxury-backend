@@ -22,13 +22,13 @@ Django API. The front ends live in their own repository.
 
 1. [Set up your machine](#set-up-your-machine) (first time only, about 15 minutes)
 2. [Run the app](#run-the-app)
-3. [Try it](#try-it): the admin site, the API docs, sign-up from the command line
+3. [Try it](#try-it): the admin site, staff roles and the audit log, sign-up from the command line
 4. [Everyday commands](#everyday-commands)
 5. [How we write code](#how-we-write-code): layers, test-driven development, test rules
 6. [Checks to run before you push](#checks-to-run-before-you-push)
 7. [Git and build scripts](#git-and-build-scripts)
 8. [When something goes wrong](#when-something-goes-wrong)
-9. Reference: [project structure](#project-structure), [apps](#apps), [shared building blocks](#shared-building-blocks), [API](#api), [settings](#settings-and-environment-variables), [build history](#build-history)
+9. Reference: [project structure](#project-structure), [apps](#apps), [shared building blocks](#shared-building-blocks), [API](#api), [staff roles and the audit log](#staff-roles-and-the-audit-log), [settings](#settings-and-environment-variables), [build history](#build-history)
 
 ## Set up your machine
 
@@ -170,6 +170,18 @@ On your machine:
 3. Open http://127.0.0.1:8000/api/v1/brands/ and
    http://127.0.0.1:8000/api/v1/product-models/?brand=hermes to see them in the API.
 
+### Staff roles and the audit log
+
+1. Open http://127.0.0.1:8000/admin/audit/auditevent/. Every change you just made
+   is there: who, what, which row, the old and new values, your IP address and the
+   request ID. Nothing on this screen can be changed or deleted.
+2. Add a staff member: http://127.0.0.1:8000/admin/accounts/user/add/, any email and
+   password. On the next page tick **Staff status**, add the group `catalog_editor`
+   and save. The audit log now shows `accounts.user.changed` with the role given.
+3. Log in as that person in a private browser window. They see the catalog screens
+   only. Add them to `intake_staff` instead and they see pieces, with the catalog
+   read only.
+
 ### Sign up and log in from the command line
 
 The web app does exactly this. Run it in a second terminal while `runserver` is
@@ -248,7 +260,10 @@ Rules:
 - A rule the database can enforce (unique, check) is also a database constraint,
   so no code path can break it.
 - Money is always `Money` (whole cents). Time limits and rates come from `policy`.
-- Staff write through services too: the admin's `save_model` and actions call them.
+- Staff write through services too: the admin's `save_model`, `delete_model`,
+  `save_formset` and actions call them.
+- Every staff change records an audit event in the same transaction, from the
+  service (see [Staff roles and the audit log](#staff-roles-and-the-audit-log)).
 
 ### Test-driven development (TDD)
 
@@ -375,6 +390,10 @@ the branch and the database file. The full log is saved in `~/samwab-build-logs/
 | `You have unapplied migration(s)` or `no such table` | Someone added a model since your last `migrate` | `python manage.py migrate` |
 | `Error: That port is already in use.` | `runserver` is already running somewhere | Stop the other one with `Ctrl+C`, or use `python manage.py runserver 8001` |
 | The admin login page says the email or password is wrong | Only staff can use the admin; or a typo | `python manage.py createsuperuser` makes a new staff login |
+| A staff member logs in and sees "You don't have permission to view or edit anything" | **Staff status** is ticked but they hold no role | Add them to a role group (`catalog_editor`, `intake_staff`) on their user page |
+| A role's permissions you changed by hand in the admin are back as before | Role permissions come from code and are set again on every `migrate` | Change `apps/<app>/permissions.py` in a pull request instead |
+| `AuditEventIsFinalError` | Code tried to change or delete an audit event | Audit events are never changed. Record a new event instead |
+| `NotSupportedError: FOR UPDATE cannot be applied to the nullable side of an outer join` (PostgreSQL only) | A row lock on a query that joins optional related rows | Lock only the main table: `select_for_update(of=("self",))` |
 | `403` with `"code": "csrf_failed"` | A request that changes something was sent without the `X-CSRFToken` header | Call `/_allauth/browser/v1/config` first and send the `csrftoken` cookie's value in `X-CSRFToken` |
 | `400` with `too_many_login_attempts` | 5 wrong passwords for that email, or a login in the first 10 seconds after sign-up | Wait 5 minutes (or 10 seconds after sign-up) |
 | Saving a piece says `attributes: ... is a required property` or similar | The attributes break the category's or design's schema | Fix the attributes as the message says, or change the schema in the catalog |
@@ -389,10 +408,14 @@ the branch and the database file. The full log is saved in `~/samwab-build-logs/
 ```
 apps/                 our code, one folder per business area
   accounts/           users: the User model, its manager and its admin screens
+    roles.py          the role names (each one is a Django group)
+    permissions.py    sets each role's admin permissions from code after every migrate
+  audit/              the audit log: one append-only row for every staff change
   catalog/            brands, categories, designs, materials, capture protocols and
                       comparable sales; the catalog manager
     models/           one file per subject; import models from apps.catalog.models
   pieces/             pieces: one row per physical object, its materials and its two statuses
+    permissions.py    what each staff role may do with pieces (catalog/ has one too)
     state.py          the allowed status moves (custody and verification)
   core/               shared building blocks used by every other app
     ids.py            new_uuid(): the ID every row gets
@@ -403,6 +426,7 @@ apps/                 our code, one folder per business area
     state_machine.py  StateMachine: the allowed moves for any status
     json_schema.py    check a JSON Schema, and check data against one
     request_id.py     gives every request an ID
+    client_ip.py      remembers the caller's IP address for the audit log
     logs.py           puts the request ID on log lines; JSON logs
     api/              views and URLs
       errors.py       the one error format
@@ -437,7 +461,8 @@ Other files at the top of the repository:
 
 | App | What it owns |
 |---|---|
-| `accounts` | Users. People log in with their email; there is no username. |
+| `accounts` | Users. People log in with their email; there is no username. Roles are Django groups, and each staff role's admin permissions are set from code. |
+| `audit` | The audit log (`audit_events`): who changed what, when and from where. Rows are only ever added. Other apps write to it from their services. |
 | `catalog` | What can be sold: brands, categories, named designs (such as the Kelly 28) and materials; the capture protocols staff follow for each category or design; comparable sales for fair prices. Staff run it in the admin site; the API only reads it. |
 | `pieces` | Pieces: one row per physical object Samwab holds, sells or has checked, with its materials, its custody status (where it is) and its verification status (is it authentic). Staff register pieces in the admin site. |
 | `core` | Shared building blocks: IDs, `BaseModel`, `Money`, policy values, errors, paging, request IDs, the API description and the health endpoint. |
@@ -456,6 +481,8 @@ Every app uses these, so learn them first. They live in `apps/core`.
 | A status that changes | `from apps.core.state_machine import StateMachine` | One table of allowed moves per status, next to its model (see `apps/pieces/state.py`). Services call `MACHINE.check(current, target)` before changing it; a refused move is 409 `illegal_transition`. |
 | Rules for flexible JSON data | `from apps.core.json_schema import attribute_errors, schema_errors` | Categories and designs describe piece attributes as JSON Schema (draft 2020-12). `schema_errors` checks a schema; `attribute_errors` lists every problem in some data, with where it is. |
 | A list in another order | `from apps.core.api.pagination import ordered_by` | `pagination_class = ordered_by("slug")`. The first field must be unique per row (see Lists and paging). |
+| A change made by staff | `from apps.audit import services as audit` | In the service, inside its transaction: `before = audit.snapshot(row)`, make the change, then `audit.record_saved(row, before=before, by=staff)`. For other actions, `audit.record("retired", row, by=staff, changes=...)`. |
+| A new staff screen | `apps/<app>/permissions.py` | Say which roles may `add`, `change`, `delete` or `view` each model, and connect it in the app's `ready()` (see `apps/catalog/apps.py`). |
 
 ```python
 from apps.core.money import Money
@@ -626,6 +653,53 @@ events (build 16), the ownership ledger (build 17) and authentication checks
 (build 28) will call them. Returns and moves between vaults add their moves when
 their rules are settled.
 
+### Staff roles and the audit log
+
+**Roles.** A staff member needs **Staff status** (to open the admin site) and one
+or more role groups (to see anything there). What each role may do is written in
+code, in `apps/<app>/permissions.py`, and set again after every `migrate`, so a
+role's permissions are always what the reviewed code says:
+
+| Role | Admin screens |
+|---|---|
+| `catalog_editor` | The whole catalog: brands, categories and designs (add, change, retire; never delete), materials, capture protocols and shots, comparable sales (add, change, delete) |
+| `intake_staff` | Pieces and their materials (add and change; pieces are never deleted), and the catalog read only, to pick a brand, category, design and materials |
+| the other roles | Nothing yet: their screens come with their builds |
+
+A superuser can do everything and is the only one who reads the audit log for now.
+Which other roles get which screens is still being agreed with the client.
+
+**Audit log** (`audit_events`, admin: `/admin/audit/auditevent/`). One row for every
+change staff make, written in the same transaction as the change, so there is never
+a change without its row or a row without its change.
+
+| Column | What it holds |
+|---|---|
+| `actor` | Who made the change (empty for a change the system makes itself) |
+| `action` | `<app>.<model>.<verb>`, such as `catalog.brand.retired` or `pieces.piece.custody_moved` |
+| `object_type`, `object_id` | The row it happened to, such as `pieces.piece` and the piece's id |
+| `changes` | `{"field": {"from": old, "to": new}}`: only what changed. A new row has only `to`, a deleted row only `from` |
+| `ip_address`, `request_id` | From the request, when there was one. The request ID matches the `X-Request-ID` header and the logs |
+| `occurred_at` | When, in UTC |
+
+What is recorded today:
+
+- **Catalog:** every add, change, retire, bring back and delete, protocol steps
+  (`created`, `activated`, `retired`, `drafted`, `deleted`) and each shot added,
+  changed or removed.
+- **Pieces:** `created`, `changed`, `custody_moved`, `verification_set`, and
+  `materials_changed` (the materials before and after, by name).
+- **Accounts:** a person added or changed in the admin, including roles (groups) and
+  permissions given or taken. Passwords and login times are never recorded.
+- Saving without changing anything records nothing. A refused change records nothing.
+- Encrypted columns (names ending in `_enc`) never go into `changes`.
+
+Rows are never changed or deleted: Django refuses (`AuditEventIsFinalError`), and on
+PostgreSQL a database trigger refuses too, even for hand-written SQL. A person with
+audit history cannot be deleted (people are anonymised instead). The IP address is
+the connection's own address; behind the hosting provider's proxy that is decided
+when the app is deployed.
+
 ### Errors
 
 Every error has the same shape, with the content type `application/problem+json`:
@@ -719,7 +793,7 @@ On your own machine, only `DJANGO_SECRET_KEY` is needed.
 The README is updated in every build.
 
 
-Last build: 14, pieces (pieces, materials, custody and verification state machines).
+Last build: 07, audit and staff roles (the audit log, admin permissions for `catalog_editor` and `intake_staff`).
 
 ## Build history
 
@@ -736,6 +810,7 @@ One line per build, newest last. Each build is one feature, merged into `dev`.
 | 13 | 21 Nov 2026 | Catalog B: `capture_protocols` and `capture_shots` (draft, active, retired versions), `comparable_sales`; their admin screens; `catalog.models` split into one file per subject |
 | 13a | 21 Nov 2026 | Full README: setup from scratch, run, try it, everyday commands, how we write code and TDD, checks, Git and build scripts, troubleshooting |
 | 14 | 21 Nov 2026 | Pieces: `pieces` and `piece_materials`; custody and verification state machines; attribute checks against JSON Schema; piece screens in the admin site; `StateMachine` and JSON Schema helpers in core |
+| 07 | 21 Nov 2026 | Audit and staff roles: `audit_events` (append-only, with a PostgreSQL trigger) written by every catalog, piece and account change staff make; admin permissions for `catalog_editor` and `intake_staff`, set from code after every `migrate`; the caller's IP address for the audit log |
 
 Builds run in the order the roadmap sets, so numbers can skip: builds 12 to 14 came
-before 06 to 11 to start on what buyers see. Build 01 (PostgreSQL on Neon) runs just before build 09.
+before 06 to 11 to start on what buyers see, then 07. Build 01 (PostgreSQL on Neon) runs just before build 09.
