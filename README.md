@@ -62,6 +62,7 @@ To run the lint and format checks automatically before every commit, run
 ```
 apps/                 our code, one folder per business area
   accounts/           users: the User model, its manager and its admin screens
+  catalog/            brands, categories, designs and materials; the catalog manager
   core/               shared building blocks used by every other app
     ids.py            new_uuid(): the ID every row gets
     models.py         BaseModel: id, created_at, updated_at
@@ -95,6 +96,7 @@ Files are added when an app needs them, so not every app has every file.
 | App | What it owns |
 |---|---|
 | `accounts` | Users. People log in with their email; there is no username. |
+| `catalog` | What can be sold: brands, categories, named designs (such as the Kelly 28) and materials. Staff run it in the admin site; the API only reads it. |
 | `core` | Shared building blocks: IDs, `BaseModel`, `Money`, policy values, errors, paging, request IDs, the API description and the health endpoint. |
 
 ## Shared building blocks
@@ -128,6 +130,9 @@ fail at once and never reach the database.
 | `GET /api/v1/health/` | Says the API is running | No |
 | `GET /api/v1/me/` | The logged-in user: profile, roles and onboarding steps | Yes |
 | `PATCH /api/v1/me/` | Change her names, country, locale or timezone | Yes |
+| `GET /api/v1/brands/` | Active brands, A to Z | No |
+| `GET /api/v1/categories/` | Active categories in menu order | No |
+| `GET /api/v1/product-models/` | Active named designs. Filters: `?brand=<slug>&category=<slug>` | No |
 | `GET /api/v1/docs/` | A page to browse and try every endpoint | No |
 | `GET /api/v1/schema/` | The OpenAPI file. Import it into Postman. Add `?format=json` for JSON | No |
 
@@ -189,6 +194,38 @@ How the web app uses them:
 ID checks, payout accounts and dealer applications are done, every step of the
 onboarding she chose is listed until the matching role is granted.
 
+### Catalog
+
+The store's menus and filters read three public lists. They need no login.
+
+- `GET /api/v1/brands/`: `id`, `name`, `slug`, A to Z by slug.
+- `GET /api/v1/categories/`: `id`, `parent_id`, `name`, `slug`, `attribute_schema`.
+  Lowest `sort_order` first, then by slug. `parent_id` puts a category under
+  another one, so the web app builds the menu tree itself.
+- `GET /api/v1/product-models/`: `id`, `brand_id`, `category_id`, `name`, `slug`,
+  `era_from`, `era_to`, by slug. `?brand=hermes&category=bags` filters by slugs.
+  An unknown slug gives an empty list; a badly formed one (`?brand=Hermès!`) gives
+  400 `validation_error`.
+
+Only active rows are shown. A design is hidden when it, its brand or its category
+is retired.
+
+Staff run the catalog in the admin site (`/admin/catalog/`):
+
+- They add, rename, reorder (the `sort_order` column in the category list) and
+  retire rows. Brands, categories and designs are retired, never deleted, so the
+  pieces and history that point at them stay. A material added by mistake can be
+  deleted.
+- A slug is filled in from the name when the row is created and never changes
+  afterwards, because the web app's links use it.
+- The admin checks the rules before saving: a category cannot sit under its own
+  children, `attribute_schema` is a JSON object, `flaw_types` is a list of codes
+  such as `["pilling", "missing_stone"]`, an HS code is 6 to 10 digits, and a
+  design's years run from 1800 to next year, first year before last.
+- A category records the staff member who last changed it (`updated_by`). Every
+  change becomes an audit event in build 07, and the `catalog_editor` role gets
+  its permissions there too. Until then, only superusers can use these screens.
+
 ### Errors
 
 Every error has the same shape, with the content type `application/problem+json`:
@@ -231,7 +268,8 @@ Every error has the same shape, with the content type `application/problem+json`
 
 ### Lists and paging
 
-Every list is paged the same way: 25 rows per page, newest first.
+Every list is paged the same way: 25 rows per page, newest first unless the
+endpoint says otherwise (the catalog lists are A to Z or in menu order).
 
 ```json
 {"next": "cD0yMDI2LTEx...", "previous": null, "results": []}
@@ -241,6 +279,12 @@ Every list is paged the same way: 25 rows per page, newest first.
 request again with `?cursor=<next>`. Stop when `next` is `null`. Ask for a different
 size with `?page_size=50` (100 at most), and send it again with every page.
 There are no page numbers.
+
+For developers: a list in another order uses
+`pagination_class = ordered_by("slug")` (`apps/core/api/pagination.py`). The cursor
+stands on the first field only, so that field must be unique per row. When the
+display order is not unique, a selector adds a unique `position` value to sort on
+(see `apps/catalog/selectors.py`); otherwise the previous page can skip rows.
 
 ### Request IDs
 
@@ -276,7 +320,7 @@ Secrets never go into Git. `.env` is ignored, and `.env.example` lists every var
 
 ## Build status
 
-Last build: 05, sign-up and login (allauth, 6-digit email codes, `/api/v1/me/`, roles).
+Last build: 12, catalog A (brands, categories, designs, materials, the catalog manager).
 
 ## Build history
 
@@ -289,5 +333,7 @@ One line per build, newest last. Each build is one feature, merged into `dev`.
 | 03 | 14 Nov 2026 | API basics: one error format, cursor paging, request IDs, JSON logs, API docs |
 | 04 | 14 Nov 2026 | Custom user: email login, lowercase emails, first migration, admin screens |
 | 05 | 17 Nov 2026 | Sign-up and login with django-allauth, 6-digit email codes, password reset, `GET`/`PATCH /api/v1/me/`, role groups, `signup_intent`, Argon2, JSON CSRF errors, 422 for business rules, bare paging cursors |
+| 12 | 21 Nov 2026 | Catalog A: `brands`, `categories`, `product_models`, `materials`; public lists `GET /api/v1/brands/`, `/categories/`, `/product-models/`; the catalog manager in the admin site |
 
-Build 01 (PostgreSQL on Neon) runs later, just before build 09.
+Builds run in the order the roadmap sets, so numbers can skip: build 12 came before
+06 to 11 to start on what buyers see. Build 01 (PostgreSQL on Neon) runs just before build 09.

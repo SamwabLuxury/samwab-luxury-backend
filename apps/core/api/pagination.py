@@ -45,3 +45,15 @@ class CursorPagination(DRFCursorPagination):
                 "description": f"Send as ?cursor= to get the {key} page; null when there is none.",
             }
         return response_schema
+
+
+def ordered_by(*fields: str) -> type[CursorPagination]:
+    """The same paging with a different order, for lists that are not newest first.
+
+    The cursor stands on the first field, so it should be nearly unique and
+    should not change once set, such as a slug. Rows that share a value are
+    still paged exactly, but each shared value makes the next page a little slower.
+
+    Use it on a view: ``pagination_class = ordered_by("slug")``.
+    """
+    return type(f"CursorPagination_{'_'.join(fields)}", (CursorPagination,), {"ordering": fields})
