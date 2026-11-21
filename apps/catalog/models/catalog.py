@@ -1,4 +1,4 @@
-"""The catalog: what can be sold on Samwab.
+"""Brands, categories, named designs and materials: what can be sold on Samwab.
 
 Staff run these tables in the admin site (the catalog manager). The public
 API only reads them. Brands, categories and designs are never deleted:

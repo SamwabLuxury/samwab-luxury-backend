@@ -62,7 +62,9 @@ To run the lint and format checks automatically before every commit, run
 ```
 apps/                 our code, one folder per business area
   accounts/           users: the User model, its manager and its admin screens
-  catalog/            brands, categories, designs and materials; the catalog manager
+  catalog/            brands, categories, designs, materials, capture protocols and
+                      comparable sales; the catalog manager
+    models/           one file per subject; import models from apps.catalog.models
   core/               shared building blocks used by every other app
     ids.py            new_uuid(): the ID every row gets
     models.py         BaseModel: id, created_at, updated_at
@@ -96,7 +98,7 @@ Files are added when an app needs them, so not every app has every file.
 | App | What it owns |
 |---|---|
 | `accounts` | Users. People log in with their email; there is no username. |
-| `catalog` | What can be sold: brands, categories, named designs (such as the Kelly 28) and materials. Staff run it in the admin site; the API only reads it. |
+| `catalog` | What can be sold: brands, categories, named designs (such as the Kelly 28) and materials; the capture protocols staff follow for each category or design; comparable sales for fair prices. Staff run it in the admin site; the API only reads it. |
 | `core` | Shared building blocks: IDs, `BaseModel`, `Money`, policy values, errors, paging, request IDs, the API description and the health endpoint. |
 
 ## Shared building blocks
@@ -222,6 +224,21 @@ Staff run the catalog in the admin site (`/admin/catalog/`):
   children, `attribute_schema` is a JSON object, `flaw_types` is a list of codes
   such as `["pilling", "missing_stone"]`, an HS code is 6 to 10 digits, and a
   design's years run from 1800 to next year, first year before last.
+- **Capture protocols** (`/admin/catalog/captureprotocol/`) list the photos and
+  readings staff take of a piece, in order: for example a macro photo of the heat
+  stamp, or a scale reading. A protocol is a category's default, or belongs to one
+  design. Staff add a protocol (it starts as a draft, numbered v1, v2 and so on), add
+  its shots, then use the "Activate" action. Activating retires the version it
+  replaces. An active protocol's shots are locked, because evidence taken under it
+  must keep matching it: to change it, use "Make a new draft version", which copies
+  the shots. Only drafts can be deleted. A photo uses a phone, macro lens, microscope
+  or loupe; a reading uses an XRF analyser, diamond tester or scale. In code,
+  `selectors.active_protocol_for(category=..., product_model=...)` gives the
+  protocol that applies: the design's own if it has one, otherwise the category's.
+- **Comparable sales** (`/admin/catalog/comparablesale/`) record what similar
+  pieces sold for, in whole US cents (convert other currencies on the sale date).
+  The design, when given, must match the brand and category. They feed the
+  fair-price explainer and the low-bid check in later builds.
 - A category records the staff member who last changed it (`updated_by`). Every
   change becomes an audit event in build 07, and the `catalog_editor` role gets
   its permissions there too. Until then, only superusers can use these screens.
@@ -320,7 +337,7 @@ Secrets never go into Git. `.env` is ignored, and `.env.example` lists every var
 
 ## Build status
 
-Last build: 12, catalog A (brands, categories, designs, materials, the catalog manager).
+Last build: 13, catalog B (capture protocols and shots, comparable sales).
 
 ## Build history
 
@@ -334,6 +351,7 @@ One line per build, newest last. Each build is one feature, merged into `dev`.
 | 04 | 14 Nov 2026 | Custom user: email login, lowercase emails, first migration, admin screens |
 | 05 | 17 Nov 2026 | Sign-up and login with django-allauth, 6-digit email codes, password reset, `GET`/`PATCH /api/v1/me/`, role groups, `signup_intent`, Argon2, JSON CSRF errors, 422 for business rules, bare paging cursors |
 | 12 | 21 Nov 2026 | Catalog A: `brands`, `categories`, `product_models`, `materials`; public lists `GET /api/v1/brands/`, `/categories/`, `/product-models/`; the catalog manager in the admin site |
+| 13 | 21 Nov 2026 | Catalog B: `capture_protocols` and `capture_shots` (draft, active, retired versions), `comparable_sales`; their admin screens; `catalog.models` split into one file per subject |
 
-Builds run in the order the roadmap sets, so numbers can skip: build 12 came before
-06 to 11 to start on what buyers see. Build 01 (PostgreSQL on Neon) runs just before build 09.
+Builds run in the order the roadmap sets, so numbers can skip: builds 12 and 13 came
+before 06 to 11 to start on what buyers see. Build 01 (PostgreSQL on Neon) runs just before build 09.
