@@ -16,6 +16,7 @@ from django.db.models.functions import Lower
 from django.utils import timezone
 
 from apps.catalog.enums import Department, Storage
+from apps.core.json_schema import schema_errors
 from apps.core.models import BaseModel
 
 FLAW_CODE = re.compile(r"^[a-z][a-z0-9_]*$")
@@ -115,6 +116,8 @@ class Category(BaseModel):
         errors: dict[str, str] = {}
         if not isinstance(self.attribute_schema, dict):
             errors["attribute_schema"] = SCHEMA_MESSAGE
+        elif problems := schema_errors(self.attribute_schema):
+            errors["attribute_schema"] = f"Not a valid JSON Schema: {problems[0]}"
         if self.parent_id is not None and self.parent_id in self._self_and_descendant_ids():
             errors["parent"] = "A category cannot sit under itself or its own children."
         if not self._flaw_types_are_valid():
@@ -198,6 +201,8 @@ class ProductModel(BaseModel):
         errors: dict[str, str] = {}
         if not isinstance(self.attribute_schema, dict):
             errors["attribute_schema"] = SCHEMA_MESSAGE
+        elif problems := schema_errors(self.attribute_schema):
+            errors["attribute_schema"] = f"Not a valid JSON Schema: {problems[0]}"
         for field in ("era_from", "era_to"):
             year = getattr(self, field)
             if year is not None and not FIRST_ERA_YEAR <= year <= latest:

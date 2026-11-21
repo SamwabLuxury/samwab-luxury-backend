@@ -14,6 +14,7 @@ Django API. The front ends live in their own repository.
 | API description | drf-spectacular (OpenAPI 3) |
 | Sign-up and login | django-allauth 65 (headless API) |
 | Password hashing | Argon2 |
+| Piece attribute rules | jsonschema 4.26 (JSON Schema draft 2020-12) |
 | Tests | pytest, pytest-django |
 | Code quality | Ruff (lint and format), mypy |
 
@@ -376,6 +377,8 @@ the branch and the database file. The full log is saved in `~/samwab-build-logs/
 | The admin login page says the email or password is wrong | Only staff can use the admin; or a typo | `python manage.py createsuperuser` makes a new staff login |
 | `403` with `"code": "csrf_failed"` | A request that changes something was sent without the `X-CSRFToken` header | Call `/_allauth/browser/v1/config` first and send the `csrftoken` cookie's value in `X-CSRFToken` |
 | `400` with `too_many_login_attempts` | 5 wrong passwords for that email, or a login in the first 10 seconds after sign-up | Wait 5 minutes (or 10 seconds after sign-up) |
+| Saving a piece says `attributes: ... is a required property` or similar | The attributes break the category's or design's schema | Fix the attributes as the message says, or change the schema in the catalog |
+| Saving a category says `Not a valid JSON Schema` | A mistake in `attribute_schema` | Check the schema; the message says which part is wrong |
 | No sign-up code arrives | Emails are not sent from your machine | Look in the `runserver` terminal |
 | A build script says `You have uncommitted changes` | `git status` shows changed files | Commit them, or ask the lead before discarding anything |
 | A build script says a file `is not the version from the last build` | That file was edited by hand | Send that file to the lead engineer; the next script will keep your change |
@@ -389,12 +392,16 @@ apps/                 our code, one folder per business area
   catalog/            brands, categories, designs, materials, capture protocols and
                       comparable sales; the catalog manager
     models/           one file per subject; import models from apps.catalog.models
+  pieces/             pieces: one row per physical object, its materials and its two statuses
+    state.py          the allowed status moves (custody and verification)
   core/               shared building blocks used by every other app
     ids.py            new_uuid(): the ID every row gets
     models.py         BaseModel: id, created_at, updated_at
     money.py          Money: whole cents plus a currency
     policy.py         time limits and default rates
     exceptions.py     AppError: what services raise when a rule says no
+    state_machine.py  StateMachine: the allowed moves for any status
+    json_schema.py    check a JSON Schema, and check data against one
     request_id.py     gives every request an ID
     logs.py           puts the request ID on log lines; JSON logs
     api/              views and URLs
@@ -432,6 +439,7 @@ Other files at the top of the repository:
 |---|---|
 | `accounts` | Users. People log in with their email; there is no username. |
 | `catalog` | What can be sold: brands, categories, named designs (such as the Kelly 28) and materials; the capture protocols staff follow for each category or design; comparable sales for fair prices. Staff run it in the admin site; the API only reads it. |
+| `pieces` | Pieces: one row per physical object Samwab holds, sells or has checked, with its materials, its custody status (where it is) and its verification status (is it authentic). Staff register pieces in the admin site. |
 | `core` | Shared building blocks: IDs, `BaseModel`, `Money`, policy values, errors, paging, request IDs, the API description and the health endpoint. |
 
 ## Shared building blocks
@@ -445,6 +453,8 @@ Every app uses these, so learn them first. They live in `apps/core`.
 | An amount of money | `from apps.core.money import Money` | Money is whole cents plus a currency. Never use floats or decimals. |
 | A time limit or default rate | `from apps.core import policy` | Read the value from `policy`. Never type the number into your own code. |
 | A business rule that says no | `from apps.core.exceptions import AppError` | Services raise `AppError` (or `NotFoundError`, `PermissionDeniedError`, `ConflictError`). They never build an HTTP response. |
+| A status that changes | `from apps.core.state_machine import StateMachine` | One table of allowed moves per status, next to its model (see `apps/pieces/state.py`). Services call `MACHINE.check(current, target)` before changing it; a refused move is 409 `illegal_transition`. |
+| Rules for flexible JSON data | `from apps.core.json_schema import attribute_errors, schema_errors` | Categories and designs describe piece attributes as JSON Schema (draft 2020-12). `schema_errors` checks a schema; `attribute_errors` lists every problem in some data, with where it is. |
 | A list in another order | `from apps.core.api.pagination import ordered_by` | `pagination_class = ordered_by("slug")`. The first field must be unique per row (see Lists and paging). |
 
 ```python
@@ -573,9 +583,48 @@ Staff run the catalog in the admin site (`/admin/catalog/`):
   pieces sold for, in whole US cents (convert other currencies on the sale date).
   The design, when given, must match the brand and category. They feed the
   fair-price explainer and the low-bid check in later builds.
+- `attribute_schema` on a category or design must be a valid JSON Schema
+  (draft 2020-12), because every piece in it is checked against it. For example, a
+  category for bags could require a width:
+  `{"type": "object", "properties": {"width_cm": {"type": "number", "minimum": 1}}, "required": ["width_cm"]}`.
 - A category records the staff member who last changed it (`updated_by`). Every
   change becomes an audit event in build 07, and the `catalog_editor` role gets
   its permissions there too. Until then, only superusers can use these screens.
+
+### Pieces
+
+A piece is one physical object. Staff register pieces in the admin site
+(`/admin/pieces/piece/`); there is no public piece endpoint yet (browse and
+listings add it).
+
+- **Where it came from.** `source` is `house_stock` (Samwab owns it: the owner must
+  be a house account, a user with `is_house_account` ticked) or `consigned` (an
+  owner sells it through Samwab: the owner must be a person, not a house account).
+  Only house stock has an `acquisition_cost_minor`.
+- **What it is.** Brand, category and, when known, the design (product model).
+  The design must belong to that brand and category. A blank department is taken
+  from the design, and a blank HS code from the category.
+- **Attributes** (measurements, metal, hardware) are JSON, checked against the
+  category's schema and the design's schema. Every problem is listed with where it
+  is, such as `width_cm: 0 is less than the minimum of 1`.
+- **Materials** are added in the list at the bottom of the piece page. A material
+  that a piece uses can no longer be deleted.
+- `serial_or_date_code` is for staff only and will never be shown to the public.
+- Pieces are never deleted.
+
+Two statuses, shown in the admin but never edited there:
+
+| Status | Values | Moves |
+|---|---|---|
+| `custody_status` (where it is) | `with_owner`, `in_transit`, `at_intake`, `in_vault`, `with_buyer` | `with_owner` → `in_transit` → `at_intake` → `in_vault` → `in_transit` → `with_buyer` |
+| `verification_status` (is it authentic) | `unverified`, `verified`, `not_authentic` | `unverified` → `verified` or `not_authentic`, decided once |
+
+The moves are in `apps/pieces/state.py`, and only `services.move_custody` and
+`services.set_verification` change a status. They lock the row and read the status
+from the database first, so two people acting at once cannot skip a step. Custody
+events (build 16), the ownership ledger (build 17) and authentication checks
+(build 28) will call them. Returns and moves between vaults add their moves when
+their rules are settled.
 
 ### Errors
 
@@ -612,6 +661,7 @@ Every error has the same shape, with the content type `application/problem+json`
 | 404 | `not_found` | No such address or object |
 | 405 | `method_not_allowed` | Wrong HTTP method |
 | 409 | `conflict` | The request clashes with the current state |
+| 409 | `illegal_transition` | A status change that is not allowed from the current status |
 | 415 | `unsupported_media_type` | The body is not sent as JSON |
 | 422 | a rule's own code, such as `bid_too_low` | A business rule said no |
 | 429 | `throttled` | Too many requests. See the `Retry-After` header |
@@ -669,7 +719,7 @@ On your own machine, only `DJANGO_SECRET_KEY` is needed.
 The README is updated in every build.
 
 
-Last build: 13, catalog B (capture protocols and shots, comparable sales).
+Last build: 14, pieces (pieces, materials, custody and verification state machines).
 
 ## Build history
 
@@ -684,6 +734,8 @@ One line per build, newest last. Each build is one feature, merged into `dev`.
 | 05 | 17 Nov 2026 | Sign-up and login with django-allauth, 6-digit email codes, password reset, `GET`/`PATCH /api/v1/me/`, role groups, `signup_intent`, Argon2, JSON CSRF errors, 422 for business rules, bare paging cursors |
 | 12 | 21 Nov 2026 | Catalog A: `brands`, `categories`, `product_models`, `materials`; public lists `GET /api/v1/brands/`, `/categories/`, `/product-models/`; the catalog manager in the admin site |
 | 13 | 21 Nov 2026 | Catalog B: `capture_protocols` and `capture_shots` (draft, active, retired versions), `comparable_sales`; their admin screens; `catalog.models` split into one file per subject |
+| 13a | 21 Nov 2026 | Full README: setup from scratch, run, try it, everyday commands, how we write code and TDD, checks, Git and build scripts, troubleshooting |
+| 14 | 21 Nov 2026 | Pieces: `pieces` and `piece_materials`; custody and verification state machines; attribute checks against JSON Schema; piece screens in the admin site; `StateMachine` and JSON Schema helpers in core |
 
-Builds run in the order the roadmap sets, so numbers can skip: builds 12 and 13 came
+Builds run in the order the roadmap sets, so numbers can skip: builds 12 to 14 came
 before 06 to 11 to start on what buyers see. Build 01 (PostgreSQL on Neon) runs just before build 09.
