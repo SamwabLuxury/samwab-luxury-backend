@@ -1,7 +1,8 @@
 """The catalog manager: staff add, rename, reorder and retire catalog rows here.
 
 Brands, categories and designs are retired, never deleted. A slug is set once,
-when the row is created, because the web app's links use it.
+when the row is created, because the web app's links use it. Every save, delete
+and inline row goes through the catalog service, which records an audit event.
 """
 
 from typing import Any
@@ -13,6 +14,7 @@ from django.db.models import QuerySet
 from django.http import HttpRequest
 
 from apps.accounts.models import User
+from apps.audit import services as audit
 from apps.catalog import services
 from apps.catalog.models import (
     Brand,
@@ -31,6 +33,12 @@ class CatalogAdmin(admin.ModelAdmin):  # type: ignore[type-arg]
 
     def save_model(self, request: HttpRequest, obj: Any, form: Any, change: bool) -> None:
         services.save_entry(obj, by=_staff(request))
+
+    def delete_model(self, request: HttpRequest, obj: Any) -> None:
+        services.delete_entry(obj, by=_staff(request))
+
+    def delete_queryset(self, request: HttpRequest, queryset: QuerySet[Any]) -> None:
+        services.delete_entries(queryset, by=_staff(request))
 
 
 class SluggedAdmin(CatalogAdmin):
@@ -209,6 +217,12 @@ class CaptureProtocolAdmin(admin.ModelAdmin):  # type: ignore[type-arg]
         if not change:
             services.add_protocol(obj, by=_staff(request))
         # A saved protocol has no fields to change here: only its shots, saved with the inline.
+
+    def save_formset(self, request: HttpRequest, form: Any, formset: Any, change: bool) -> None:
+        audit.save_inline_rows(formset, by=_staff(request))
+
+    def delete_model(self, request: HttpRequest, obj: Any) -> None:
+        services.delete_protocol(obj, by=_staff(request))
 
     def _each(
         self, request: HttpRequest, queryset: QuerySet[CaptureProtocol], step: Any, done: str

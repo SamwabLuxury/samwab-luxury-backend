@@ -3,8 +3,8 @@
 Every write goes through a function here, never straight to the model, so the
 rules live in one place when the API or a script needs the same write later.
 
-An audit event for every change arrives with build 07. Until then, categories
-record who changed them last in ``updated_by``.
+Every write also records an audit event in the same transaction (build 07).
+Categories also keep who changed them last in ``updated_by``.
 """
 
 from django.db import models, transaction
@@ -12,6 +12,7 @@ from django.db.models import Max, QuerySet
 from django.utils import timezone
 
 from apps.accounts.models import User
+from apps.audit import services as audit
 from apps.catalog.enums import ProtocolStatus
 from apps.catalog.exceptions import (
     ProtocolHasNoShotsError,
@@ -25,13 +26,22 @@ def _tracks_editor(model: type[models.Model]) -> bool:
     return any(field.name == "updated_by" for field in model._meta.get_fields())
 
 
+def _stored(entry: models.Model) -> audit.Snapshot | None:
+    """The entry's values as they are in the database now, or ``None`` for a new entry."""
+    if entry._state.adding:
+        return None
+    return audit.snapshot(type(entry)._default_manager.get(pk=entry.pk))
+
+
 @transaction.atomic
 def save_entry(entry: models.Model, *, by: User) -> None:
     """Check the entry's rules, then save it, recording who changed it where the table can."""
+    before = _stored(entry)
     if _tracks_editor(type(entry)):
         entry.updated_by = by  # type: ignore[attr-defined]
     entry.full_clean()
     entry.save()
+    audit.record_saved(entry, before=before, by=by)
 
 
 @transaction.atomic
@@ -39,11 +49,43 @@ def set_active(entries: models.QuerySet[models.Model], *, is_active: bool, by: U
     """Retire (``False``) or bring back (``True``) catalog rows. Returns how many changed.
 
     Nothing is ever deleted: pieces, listings and history keep pointing at retired rows.
+    Rows already in the wanted state are left alone and get no audit event.
     """
+    # of=self: lock only these rows. PostgreSQL refuses to lock the optional side of a join,
+    # and the admin's list query joins related rows for display.
+    to_change = list(entries.exclude(is_active=is_active).select_for_update(of=("self",)))
     changes: dict[str, object] = {"is_active": is_active, "updated_at": timezone.now()}
     if _tracks_editor(entries.model):
         changes["updated_by"] = by
-    return entries.update(**changes)
+    entries.model._default_manager.filter(pk__in=[row.pk for row in to_change]).update(**changes)
+    for row in to_change:
+        audit.record(
+            "restored" if is_active else "retired",
+            row,
+            by=by,
+            changes={"is_active": {"from": not is_active, "to": is_active}},
+        )
+    return len(to_change)
+
+
+@transaction.atomic
+def delete_entry(entry: models.Model, *, by: User) -> None:
+    """Delete a row that may be deleted (a material typo, a comparable sale, a shot).
+
+    The database still refuses a row others depend on (``ProtectedError``).
+    """
+    before, entry_id = audit.snapshot(entry), entry.pk
+    entry.delete()
+    audit.record_deleted(type(entry), entry_id, before=before, by=by)
+
+
+@transaction.atomic
+def delete_entries(entries: QuerySet[models.Model], *, by: User) -> int:
+    """Delete several rows, all or none, with one audit event each. Returns how many."""
+    rows = list(entries)
+    for row in rows:
+        delete_entry(row, by=by)
+    return len(rows)
 
 
 # ---------- capture protocols ----------
@@ -73,6 +115,7 @@ def add_protocol(protocol: CaptureProtocol, *, by: User) -> CaptureProtocol:
     protocol.full_clean(exclude=["version"])
     protocol.version = _next_version(protocol.category, protocol.product_model)
     protocol.save()
+    audit.record_saved(protocol, before=None, by=by)
     return protocol
 
 
@@ -91,11 +134,14 @@ def activate_protocol(protocol: CaptureProtocol, *, by: User) -> CaptureProtocol
         raise ProtocolNotDraftError()
     if not current.shots.filter(is_required=True).exists():
         raise ProtocolHasNoShotsError()
-    _scope(current.category, current.product_model).filter(status=ProtocolStatus.ACTIVE).update(
-        status=ProtocolStatus.RETIRED, updated_at=timezone.now()
+    replaced = list(
+        _scope(current.category, current.product_model)
+        .filter(status=ProtocolStatus.ACTIVE)
+        .select_for_update(of=("self",))  # the default order joins the optional design
     )
-    current.status = ProtocolStatus.ACTIVE
-    current.save(update_fields=["status", "updated_at"])
+    for old in replaced:
+        _set_status(old, ProtocolStatus.RETIRED, verb="retired", by=by)
+    _set_status(current, ProtocolStatus.ACTIVE, verb="activated", by=by)
     return current
 
 
@@ -105,16 +151,31 @@ def retire_protocol(protocol: CaptureProtocol, *, by: User) -> CaptureProtocol:
     current = _locked(protocol)
     if current.status != ProtocolStatus.ACTIVE:
         raise ProtocolNotActiveError()
-    current.status = ProtocolStatus.RETIRED
-    current.save(update_fields=["status", "updated_at"])
+    _set_status(current, ProtocolStatus.RETIRED, verb="retired", by=by)
     return current
+
+
+def _set_status(protocol: CaptureProtocol, status: str, *, verb: str, by: User) -> None:
+    changes = {"status": {"from": protocol.status, "to": status}}
+    protocol.status = status
+    protocol.save(update_fields=["status", "updated_at"])
+    audit.record(verb, protocol, by=by, changes=changes)
+
+
+@transaction.atomic
+def delete_protocol(protocol: CaptureProtocol, *, by: User) -> None:
+    """Delete a draft protocol and its shots. Protocols that were used stay, as history."""
+    current = _locked(protocol)
+    if not current.is_draft:
+        raise ProtocolNotDraftError()
+    delete_entry(current, by=by)
 
 
 @transaction.atomic
 def new_draft_from(protocol: CaptureProtocol, *, by: User) -> CaptureProtocol:
     """Copy a protocol and its shots into the next draft version, ready to be changed."""
     draft = create_protocol(category=protocol.category, product_model=protocol.product_model, by=by)
-    CaptureShot.objects.bulk_create(
+    shots = CaptureShot.objects.bulk_create(
         CaptureShot(
             protocol=draft,
             code=shot.code,
@@ -127,5 +188,11 @@ def new_draft_from(protocol: CaptureProtocol, *, by: User) -> CaptureProtocol:
             sort_order=shot.sort_order,
         )
         for shot in protocol.shots.all()
+    )
+    audit.record(
+        "drafted",
+        draft,
+        by=by,
+        changes={"copied_from": str(protocol.pk), "shots_copied": len(shots)},
     )
     return draft

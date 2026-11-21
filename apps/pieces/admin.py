@@ -1,7 +1,9 @@
 """Piece screens for staff: register house stock and consigned pieces, and fix their details.
 
 Statuses are shown but never edited here: they move only through the state
-machine (``services.move_custody`` and ``services.set_verification``).
+machine (``services.move_custody`` and ``services.set_verification``). Saves go
+through the piece services, which record audit events; a change to the materials
+is recorded as one event on the piece.
 """
 
 from typing import Any
@@ -78,7 +80,15 @@ class PieceAdmin(admin.ModelAdmin):  # type: ignore[type-arg]
 
     def save_model(self, request: HttpRequest, obj: Any, form: Any, change: bool) -> None:
         staff: User = request.user  # type: ignore[assignment]
+        # The materials are saved after the piece (in save_related); remember them first.
+        obj._materials_before = services.material_names(obj) if change else []
         if change:
             services.update_piece(obj, by=staff)
         else:
             services.register_piece(obj, by=staff)
+
+    def save_related(self, request: HttpRequest, form: Any, formsets: Any, change: bool) -> None:
+        super().save_related(request, form, formsets, change)
+        staff: User = request.user  # type: ignore[assignment]
+        piece = form.instance
+        services.record_materials(piece, before=piece._materials_before, by=staff)
