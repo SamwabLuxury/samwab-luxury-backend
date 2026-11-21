@@ -58,13 +58,10 @@ a single file that Django creates for you.
 
 ```bash
 cd ~/Desktop
-git clone <repository address> samwab    # the address is on the repository page
+git clone https://github.com/SamwabLuxury/samwab-luxury-backend.git samwab
 cd samwab
-git checkout dev                           # all work starts from dev
+git checkout dev                           # all work starts from dev (GitHub's default branch)
 ```
-
-Until the GitHub repository exists, ask the lead engineer for a copy of the folder
-and put it at `~/Desktop/samwab`.
 
 ### 3. Make the virtual environment
 
@@ -323,6 +320,12 @@ parts separated by blank lines: set up, act, check.
 These are exactly what CI (`.github/workflows/ci.yml`) and every build script run.
 All of them must pass.
 
+CI runs on GitHub at every push to `dev` or `main` and on every pull request, in two
+jobs: **Checks and tests (SQLite)** runs everything below, and **Tests (PostgreSQL
+18, as in production)** applies the migrations and runs every test again on
+PostgreSQL. See the runs at
+https://github.com/SamwabLuxury/samwab-luxury-backend/actions.
+
 ```bash
 python -m ruff check .                                       # lint
 python -m ruff format --check .                              # format (run without --check to fix)
@@ -333,16 +336,32 @@ python manage.py spectacular --validate --fail-on-warn > /dev/null   # the API d
 python -m pytest --cov --cov-report=term-missing             # tests and coverage
 ```
 
+To run the tests on PostgreSQL on your own machine too (optional; needs a PostgreSQL
+server you can reach), point `DATABASE_URL` at an empty database:
+
+```bash
+DATABASE_URL=postgres://user:password@localhost:5432/samwab python -m pytest
+```
+
+Without `DATABASE_URL`, tests use SQLite.
+
 ## Git and build scripts
 
 ### Branches
 
-- `main`: production.
-- `dev`: deployed first. All work merges here.
+The code lives at https://github.com/SamwabLuxury/samwab-luxury-backend.
+
+- `dev`: GitHub's default branch. All work merges here, and CI checks every push.
+- `main`: what is deployed. A feature goes to `main` only when it is finished and CI
+  is green on `dev`. From build 01, Render deploys `main` automatically, and only
+  after CI passes on it.
 - `feature/<short-name>`: one branch per task or build, made from `dev`.
+
+Always start from an up-to-date `dev`:
 
 ```bash
 git checkout dev
+git pull
 git checkout -b feature/b14-pieces       # one feature per branch
 # ... write the test, write the code, run the checks ...
 git add .
@@ -350,10 +369,18 @@ git commit -m "Build 14: pieces"
 git checkout dev
 git merge --no-ff feature/b14-pieces -m "Merge build 14: pieces"
 git branch -d feature/b14-pieces
+git push                                 # then check CI turns green on GitHub
 ```
 
-Once the GitHub repository exists, push the feature branch and open a pull request
-into `dev` instead of merging on your machine; CI must be green before merging.
+To release what is on `dev` (only when CI is green on `dev`):
+
+```bash
+git checkout main
+git pull
+git merge --no-ff dev -m "Release: <what is in it>"
+git push                                 # Render deploys main once CI passes
+git checkout dev
+```
 
 Never commit `.env`, `db.sqlite3` or `.venv`. `.gitignore` already leaves them out.
 
@@ -362,19 +389,21 @@ Never commit `.env`, `db.sqlite3` or `.venv`. `.gitignore` already leaves them o
 The lead engineer receives each build as one script, run from Git Bash:
 
 ```bash
-cd ~/Desktop/samwab && git checkout dev && git status --short    # must print nothing
+cd ~/Desktop/samwab && git checkout dev && git pull && git status --short    # must print nothing
 bash ~/Downloads/build_<number>_<name>.sh
 ```
 
 The script:
 
 1. stops before changing anything if there are uncommitted changes, you are not
-   on `dev`, the venv is missing or not Python 3.13, or a file it replaces is not
-   the version it expects;
+   on `dev`, your `dev` is not the same as GitHub's, the venv is missing or not
+   Python 3.13, or a file it replaces is not the version it expects;
 2. creates `feature/b<number>-<name>` and writes the files;
 3. installs packages and runs every check above;
 4. applies migrations to your local database only after everything passed;
-5. stops with nothing committed, and prints the commit and merge commands.
+5. stops with nothing committed, and prints the commit, merge and push commands.
+   Run them straight away, before switching branches: uncommitted files follow you
+   to the next branch.
 
 On any failure, or `Ctrl+C`, it puts everything back as it found it: the files,
 the branch and the database file. The full log is saved in `~/samwab-build-logs/`.
@@ -383,6 +412,10 @@ the branch and the database file. The full log is saved in `~/samwab-build-logs/
 
 | What you see | Why | Fix |
 |---|---|---|
+| A build script stops with "Your dev is not the same as GitHub's" | Someone pushed to `dev`, or you have commits not pushed yet | `git pull` (or `git push`), then run the script again |
+| `git push` is rejected ("fetch first", "non-fast-forward") | GitHub's `dev` has commits you do not have | `git pull`, then `git push` again |
+| A red cross on GitHub's Actions page | A check failed on GitHub | Open the run, open the red job, read the failing step; run the same command on your machine |
+| Tests pass on your machine but fail in the PostgreSQL job | Something works on SQLite only (row locks, database rules) | Run the tests with `DATABASE_URL` set (see Checks to run before you push), or ask the lead |
 | `ModuleNotFoundError: No module named 'django'` | The virtual environment is not active, or packages are not installed | `source .venv/Scripts/activate`, then `python -m pip install -r requirements/dev.txt` |
 | No `(.venv)` at the start of the prompt | New terminal window | Activate it again (step 3) |
 | `python --version` is not 3.13 | The venv was made with another Python | Delete `.venv`, then repeat steps 3 and 4 with `py -3.13` (Windows) or `python3.13` |
@@ -825,7 +858,7 @@ On your own machine, only `DJANGO_SECRET_KEY` is needed.
 The README is updated in every build.
 
 
-Last build: 08, idempotency (the `Idempotency-Key` header for create endpoints).
+Last build: 08a, tidy-up (GitHub flow, CI on SQLite and PostgreSQL 18).
 
 ## Build history
 
@@ -844,6 +877,7 @@ One line per build, newest last. Each build is one feature, merged into `dev`.
 | 14 | 21 Nov 2026 | Pieces: `pieces` and `piece_materials`; custody and verification state machines; attribute checks against JSON Schema; piece screens in the admin site; `StateMachine` and JSON Schema helpers in core |
 | 07 | 21 Nov 2026 | Audit and staff roles: `audit_events` (append-only, with a PostgreSQL trigger) written by every catalog, piece and account change staff make; admin permissions for `catalog_editor` and `intake_staff`, set from code after every `migrate`; the caller's IP address for the audit log |
 | 08 | 21 Nov 2026 | Idempotency: `idempotency_keys` and the `@idempotent` decorator (`Idempotency-Key` required, first answer replayed for 24 hours, 400/409/422 as in the IETF draft), a command to delete expired keys |
+| 08a | 22 Nov 2026 | Tidy-up: code on GitHub (`dev` default, `main` for deploys); CI also runs every test on PostgreSQL 18; tests use `DATABASE_URL` when set; build scripts end with `git push` |
 
 Builds run in the order the roadmap sets, so numbers can skip: builds 12 to 14 came
-before 06 to 11 to start on what buyers see, then 07 and 08. Build 01 (PostgreSQL on Neon) runs just before build 09.
+before 06 to 11 to start on what buyers see, then 07, 08 and the 08a tidy-up. Build 01 (PostgreSQL on Neon) runs just before build 09.
