@@ -1,0 +1,106 @@
+name: CI
+
+# Runs on every push to dev and main, and on every pull request.
+# Render deploys main only after both jobs pass ("After CI Checks Pass").
+on:
+  pull_request:
+  push:
+    branches: [dev, main]
+
+jobs:
+  checks:
+    name: Checks and tests (SQLite)
+    runs-on: ubuntu-latest
+    env:
+      DJANGO_SETTINGS_MODULE: configurations.settings.test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements/*.txt
+      - name: Install dependencies
+        run: python -m pip install -r requirements/dev.txt
+      - name: Lint
+        run: python -m ruff check .
+      - name: Format check
+        run: python -m ruff format --check .
+      - name: Type check
+        run: python -m mypy
+      - name: Django system check
+        run: python manage.py check
+      - name: Missing migrations check
+        run: python manage.py makemigrations --check --dry-run
+      - name: OpenAPI schema check
+        run: python manage.py spectacular --validate --fail-on-warn > /dev/null
+      - name: Tests
+        run: python -m pytest --cov --cov-report=term-missing
+
+  postgres:
+    name: Tests (PostgreSQL 18, as in production)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        # Neon's default for new projects is PostgreSQL 18; keep this the same
+        # major version as the production database.
+        image: postgres:18
+        env:
+          POSTGRES_USER: samwab
+          POSTGRES_PASSWORD: samwab
+          POSTGRES_DB: samwab
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U samwab"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DJANGO_SETTINGS_MODULE: configurations.settings.test
+      DATABASE_URL: postgres://samwab:samwab@localhost:5432/samwab
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements/*.txt
+      - name: Install dependencies (development and production)
+        run: python -m pip install -r requirements/dev.txt -r requirements/prod.txt
+      - name: Migrations apply on PostgreSQL
+        run: python manage.py migrate --noinput
+      - name: Tests
+        run: python -m pytest
+      # The two steps below rehearse Render: the same settings, build and start commands.
+      - name: Production build (as on Render)
+        env:
+          DJANGO_SETTINGS_MODULE: configurations.settings.production
+          RENDER_EXTERNAL_HOSTNAME: localhost
+          # Production requires an encrypted database connection (Neon always has one).
+          # This throwaway CI database has none, so only here we say so explicitly.
+          DATABASE_URL: postgres://samwab:samwab@localhost:5432/samwab?sslmode=disable
+        run: |
+          export DJANGO_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(50))')"
+          python manage.py check --deploy --fail-level WARNING
+          python manage.py collectstatic --no-input
+          python manage.py migrate --no-input
+      - name: Production start (as on Render)
+        env:
+          DJANGO_SETTINGS_MODULE: configurations.settings.production
+          RENDER_EXTERNAL_HOSTNAME: localhost
+          # Production requires an encrypted database connection (Neon always has one).
+          # This throwaway CI database has none, so only here we say so explicitly.
+          DATABASE_URL: postgres://samwab:samwab@localhost:5432/samwab?sslmode=disable
+          PORT: "8000"
+        run: |
+          export DJANGO_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(50))')"
+          gunicorn configurations.wsgi:application --daemon --pid gunicorn.pid
+          for attempt in $(seq 1 20); do
+            curl -sf http://localhost:8000/api/v1/health/ && break
+            sleep 1
+          done
+          curl -sf -o /dev/null http://localhost:8000/api/v1/health/
+          curl -sf -o /dev/null -H "X-Forwarded-Proto: https" http://localhost:8000/admin/login/
+          curl -sf -o /dev/null -H "X-Forwarded-Proto: https" http://localhost:8000/static/admin/css/base.css
+          kill "$(cat gunicorn.pid)"

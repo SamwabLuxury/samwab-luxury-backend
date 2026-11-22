@@ -1,0 +1,6 @@
+# Staging and production: everything in base, plus the web server.
+-r base.txt
+gunicorn==27.0.1
+# PostgreSQL driver for Neon. The binary package bundles libpq, so Render's build
+# needs no compiler or system libraries.
+psycopg[binary]==3.3.9
