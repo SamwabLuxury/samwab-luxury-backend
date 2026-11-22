@@ -9,3 +9,5 @@ jsonschema==4.26.0
 asgiref==3.13.0
 sqlparse==0.6.1
 tzdata==2026.6
+# Serves static files (the admin's CSS and JavaScript) on the live site.
+whitenoise==6.12.0
