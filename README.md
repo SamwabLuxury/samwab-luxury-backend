@@ -415,6 +415,7 @@ the branch and the database file. The full log is saved in `~/samwab-build-logs/
 | A build script stops with "Your dev is not the same as GitHub's" | Someone pushed to `dev`, or you have commits not pushed yet | `git pull` (or `git push`), then run the script again |
 | `git push` is rejected ("fetch first", "non-fast-forward") | GitHub's `dev` has commits you do not have | `git pull`, then `git push` again |
 | A red cross on GitHub's Actions page | A check failed on GitHub | Open the run, open the red job, read the failing step; run the same command on your machine |
+| `server does not support SSL, but SSL was required` | The production settings insist on an encrypted database connection, and this database has none (only a local or CI database; Neon is always encrypted) | For a local or CI database only, add `?sslmode=disable` to the end of `DATABASE_URL`; never for Neon |
 | Tests pass on your machine but fail in the PostgreSQL job | Something works on SQLite only (row locks, database rules) | Run the tests with `DATABASE_URL` set (see Checks to run before you push), or ask the lead |
 | `ModuleNotFoundError: No module named 'django'` | The virtual environment is not active, or packages are not installed | `source .venv/Scripts/activate`, then `python -m pip install -r requirements/dev.txt` |
 | No `(.venv)` at the start of the prompt | New terminal window | Activate it again (step 3) |
@@ -923,7 +924,7 @@ On your own machine, only `DJANGO_SECRET_KEY` is needed.
 The README is updated in every build.
 
 
-Last build: 01, production deploy (Neon PostgreSQL, Render, WhiteNoise; CI rehearses the deploy).
+Last build: 01a, CI fix for the deploy rehearsal (after 01, production deploy).
 
 ## Build history
 
@@ -944,6 +945,7 @@ One line per build, newest last. Each build is one feature, merged into `dev`.
 | 08 | 21 Nov 2026 | Idempotency: `idempotency_keys` and the `@idempotent` decorator (`Idempotency-Key` required, first answer replayed for 24 hours, 400/409/422 as in the IETF draft), a command to delete expired keys |
 | 08a | 22 Nov 2026 | Tidy-up: code on GitHub (`dev` default, `main` for deploys); CI also runs every test on PostgreSQL 18; tests use `DATABASE_URL` when set; build scripts end with `git push` |
 | 01 | 22 Nov 2026 | Production deploy: Neon PostgreSQL from `DATABASE_URL` (Neon's Django settings), Render's address allowed automatically, WhiteNoise for static files, `.python-version`, emails to the logs until an email service exists; CI rehearses Render's build and start |
+| 01a | 22 Nov 2026 | CI fix: the deploy rehearsal tells production settings that the throwaway CI database is unencrypted (`sslmode=disable`, CI only) |
 
 Builds run in the order the roadmap sets, so numbers can skip: builds 12 to 14 came
 before 06 to 11 to start on what buyers see, then 07, 08, the 08a tidy-up and build 01 (production deploy).
