@@ -77,6 +77,9 @@ jobs:
         env:
           DJANGO_SETTINGS_MODULE: configurations.settings.production
           RENDER_EXTERNAL_HOSTNAME: localhost
+          # Production requires an encrypted database connection (Neon always has one).
+          # This throwaway CI database has none, so only here we say so explicitly.
+          DATABASE_URL: postgres://samwab:samwab@localhost:5432/samwab?sslmode=disable
         run: |
           export DJANGO_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(50))')"
           python manage.py check --deploy --fail-level WARNING
@@ -86,6 +89,9 @@ jobs:
         env:
           DJANGO_SETTINGS_MODULE: configurations.settings.production
           RENDER_EXTERNAL_HOSTNAME: localhost
+          # Production requires an encrypted database connection (Neon always has one).
+          # This throwaway CI database has none, so only here we say so explicitly.
+          DATABASE_URL: postgres://samwab:samwab@localhost:5432/samwab?sslmode=disable
           PORT: "8000"
         run: |
           export DJANGO_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(50))')"
