@@ -51,6 +51,8 @@ MIDDLEWARE = [
     # The caller's IP address, for the audit log.
     "apps.core.client_ip.ClientIpMiddleware",
     "django.middleware.security.SecurityMiddleware",
+    # Serves the admin's CSS and JavaScript on the live site (WhiteNoise docs: right here).
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -172,6 +174,8 @@ USE_I18N = True
 USE_TZ = True
 
 STATIC_URL = "static/"
+# `collectstatic` copies every static file here at deploy time; WhiteNoise serves them.
+STATIC_ROOT = BASE_DIR / "staticfiles"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 

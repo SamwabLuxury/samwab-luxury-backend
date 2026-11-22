@@ -28,7 +28,7 @@ Django API. The front ends live in their own repository.
 6. [Checks to run before you push](#checks-to-run-before-you-push)
 7. [Git and build scripts](#git-and-build-scripts)
 8. [When something goes wrong](#when-something-goes-wrong)
-9. Reference: [project structure](#project-structure), [apps](#apps), [shared building blocks](#shared-building-blocks), [API](#api), [staff roles and the audit log](#staff-roles-and-the-audit-log), [safe retries](#safe-retries-the-idempotency-key-header), [settings](#settings-and-environment-variables), [build history](#build-history)
+9. Reference: [project structure](#project-structure), [apps](#apps), [shared building blocks](#shared-building-blocks), [API](#api), [staff roles and the audit log](#staff-roles-and-the-audit-log), [safe retries](#safe-retries-the-idempotency-key-header), [deploying to Render](#deploying-to-render-and-neon), [settings](#settings-and-environment-variables), [build history](#build-history)
 
 ## Set up your machine
 
@@ -835,6 +835,67 @@ send its own `X-Request-ID` (8 to 64 letters, digits, `.`, `_` or `-`).
 
 Logs are plain text on your machine and one JSON object per line on servers.
 
+## Deploying to Render and Neon
+
+The live API runs on **Render** (web service `samwab-luxury-backend`, region
+Virginia, US East) and its database on **Neon** (PostgreSQL 18, AWS US East,
+N. Virginia). Render deploys the `main` branch by itself, but only after both CI
+jobs pass on it ("After CI Checks Pass"). Your own machine still uses SQLite.
+
+To release: get CI green on `dev`, then merge `dev` into `main` and push (see
+Branches). Render builds and starts the new version a few minutes later.
+
+**Render settings** (Dashboard, the service, Settings):
+
+| Setting | Value |
+|---|---|
+| Branch | `main` |
+| Language | Python 3 (the version comes from `.python-version`: the latest 3.13) |
+| Build command | `pip install -r requirements/prod.txt && python manage.py collectstatic --no-input && DATABASE_URL="$DIRECT_DATABASE_URL" python manage.py migrate --no-input` |
+| Start command | `gunicorn configurations.wsgi:application` |
+| Health check path | `/api/v1/health/` |
+| Pre-deploy command | Empty (the free plan has none; migrations run in the build command) |
+| Auto-deploy | After CI Checks Pass |
+
+**Render environment variables:**
+
+| Variable | Value |
+|---|---|
+| `DJANGO_SETTINGS_MODULE` | `configurations.settings.production` |
+| `DJANGO_SECRET_KEY` | Press **Generate** |
+| `DATABASE_URL` | Neon's **pooled** connection string (the host contains `-pooler`): the running app uses it |
+| `DIRECT_DATABASE_URL` | Neon's **direct** connection string (no `-pooler`): only migrations use it |
+| `WEB_CONCURRENCY` | `2` (Gunicorn's number of workers) |
+| `DJANGO_EMAIL_TO_LOGS` | `true` until an email service is chosen: emails, such as sign-up codes, are written to Render's **Logs** instead of sent. Remove it and set the `DJANGO_EMAIL_*` variables when the email service exists |
+| `DJANGO_FRONTEND_URL` | The web app's address, when it has one |
+
+Render sets `RENDER_EXTERNAL_HOSTNAME` itself (for example
+`samwab-luxury-backend.onrender.com`); the app accepts that address and trusts it
+for forms. Add a custom domain with `DJANGO_ALLOWED_HOSTS` and
+`DJANGO_CSRF_TRUSTED_ORIGINS`.
+
+**After the first deploy:**
+
+- Check https://samwab-luxury-backend.onrender.com/api/v1/health/ answers `{"status": "ok"}`.
+- Make your admin login: Render's **Shell** tab is not on the free plan, so run it
+  from your machine once, against Neon's **direct** string (never commit it):
+  ```bash
+  DJANGO_SETTINGS_MODULE=configurations.settings.production \
+  DJANGO_SECRET_KEY=any-long-text DATABASE_URL='<Neon direct connection string>' \
+  python manage.py createsuperuser
+  ```
+  (Production settings need the PostgreSQL driver, which `requirements/dev.txt` installs.)
+- Then open `/admin/` on the Render address.
+
+CI rehearses all of this on every push: the PostgreSQL job runs Django's
+deployment checklist (`check --deploy`), `collectstatic`, `migrate`, starts
+Gunicorn with the production settings and loads the health check, the admin
+login page and the admin's CSS.
+
+Free Render instances sleep after a while without visitors; the first request
+afterwards takes longer. Uploaded files are not kept between deploys, so piece
+photos will need a cloud bucket (S3 or R2) before they are used on the live site.
+
 ## Settings and environment variables
 
 Pick the settings file with `DJANGO_SETTINGS_MODULE`. `manage.py` uses
@@ -844,11 +905,15 @@ Servers use `configurations.settings.production` (or `staging`).
 | Variable | Needed in | Meaning |
 |---|---|---|
 | `DJANGO_SECRET_KEY` | everywhere | Long random text used for signing |
-| `DJANGO_ALLOWED_HOSTS` | staging, production | Host names the API answers to, comma separated |
-| `DJANGO_CSRF_TRUSTED_ORIGINS` | staging, production | Front-end addresses allowed to send forms, comma separated |
+| `DATABASE_URL` | staging, production; optional in tests | The database. Production: Neon's pooled string. Tests: set it to run on PostgreSQL |
+| `DIRECT_DATABASE_URL` | Render's build command | Neon's direct string, used only by `migrate` |
+| `DJANGO_ALLOWED_HOSTS` | optional | Extra host names the API answers to, comma separated (Render's own is added automatically) |
+| `DJANGO_CSRF_TRUSTED_ORIGINS` | optional | Extra addresses allowed to send forms, comma separated (Render's own is added automatically) |
+| `DJANGO_EMAIL_TO_LOGS` | production, until an email service exists | `true` writes emails to the logs instead of sending them |
 | `DJANGO_FRONTEND_URL` | staging, production | The web app's address, used for links in emails. Default `http://localhost:3000` |
 | `DJANGO_DEFAULT_FROM_EMAIL` | staging, production | Sender of every email, such as `Samwab <no-reply@samwab.com>` |
 | `DJANGO_EMAIL_HOST`, `DJANGO_EMAIL_PORT`, `DJANGO_EMAIL_USER`, `DJANGO_EMAIL_PASSWORD`, `DJANGO_EMAIL_USE_TLS` | staging, production | The email provider's SMTP details. Port defaults to 587 and TLS to on |
+| `RENDER_EXTERNAL_HOSTNAME`, `PORT`, `WEB_CONCURRENCY` | Render | Set by Render (the last by you): the public host name, the port Gunicorn listens on, the number of workers |
 
 Secrets never go into Git. `.env` is ignored, and `.env.example` lists every variable.
 On your own machine, only `DJANGO_SECRET_KEY` is needed.
@@ -858,7 +923,7 @@ On your own machine, only `DJANGO_SECRET_KEY` is needed.
 The README is updated in every build.
 
 
-Last build: 08a, tidy-up (GitHub flow, CI on SQLite and PostgreSQL 18).
+Last build: 01, production deploy (Neon PostgreSQL, Render, WhiteNoise; CI rehearses the deploy).
 
 ## Build history
 
@@ -878,6 +943,7 @@ One line per build, newest last. Each build is one feature, merged into `dev`.
 | 07 | 21 Nov 2026 | Audit and staff roles: `audit_events` (append-only, with a PostgreSQL trigger) written by every catalog, piece and account change staff make; admin permissions for `catalog_editor` and `intake_staff`, set from code after every `migrate`; the caller's IP address for the audit log |
 | 08 | 21 Nov 2026 | Idempotency: `idempotency_keys` and the `@idempotent` decorator (`Idempotency-Key` required, first answer replayed for 24 hours, 400/409/422 as in the IETF draft), a command to delete expired keys |
 | 08a | 22 Nov 2026 | Tidy-up: code on GitHub (`dev` default, `main` for deploys); CI also runs every test on PostgreSQL 18; tests use `DATABASE_URL` when set; build scripts end with `git push` |
+| 01 | 22 Nov 2026 | Production deploy: Neon PostgreSQL from `DATABASE_URL` (Neon's Django settings), Render's address allowed automatically, WhiteNoise for static files, `.python-version`, emails to the logs until an email service exists; CI rehearses Render's build and start |
 
 Builds run in the order the roadmap sets, so numbers can skip: builds 12 to 14 came
-before 06 to 11 to start on what buyers see, then 07, 08 and the 08a tidy-up. Build 01 (PostgreSQL on Neon) runs just before build 09.
+before 06 to 11 to start on what buyers see, then 07, 08, the 08a tidy-up and build 01 (production deploy).

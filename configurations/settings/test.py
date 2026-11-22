@@ -14,5 +14,8 @@ from .base import env
 if "DATABASE_URL" in os.environ:
     DATABASES = {"default": env.db("DATABASE_URL")}
 
+# Tests never run collectstatic; skip WhiteNoise's start-up scan (WhiteNoise docs).
+WHITENOISE_AUTOREFRESH = True
+
 # Fast hashing keeps tests quick. Never use this outside tests.
 PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
