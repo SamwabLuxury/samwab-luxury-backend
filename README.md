@@ -232,6 +232,38 @@ python manage.py shell -c "from django.db import connection; c = connection.curs
    cancels it, then says `Payments are working with stripe.` In the dashboard,
    **Payments** shows the cancelled $1.00. It refuses live keys.
 
+### Buy a piece, end to end (Stripe sandbox)
+
+You need a live listing (above) and your sandbox key in `.env`. The buyer must be
+a different account from the admin (an admin cannot buy the house's own stock).
+
+1. Sign up and log in a buyer with the commands in the next section, "Sign up and
+   log in from the command line" (steps 1 to 3). Keep that terminal: `API`,
+   `TOKEN` and `cookies.txt` are used below.
+2. Copy a listing's `id` from `curl -s $API/api/v1/listings/`, then buy it:
+   ```bash
+   curl -s -b cookies.txt -H "X-CSRFToken: $TOKEN" -H "Idempotency-Key: try-1" \
+     -H "Content-Type: application/json" \
+     -d '{"listing_id": "<the listing id>", "payment_option": "pay_in_full", "delivery_choice": "keep_in_vault"}' \
+     $API/api/v1/orders/
+   ```
+   The answer has the order (`pending_payment`, `pay_by` 15 minutes ahead) and a
+   `payment` whose `client_secret` starts with the Stripe payment's id (`pi_...`).
+   Sending it again with the same `Idempotency-Key` gives the same answer.
+3. Pay it as a buyer would, with Stripe's test card, in the Stripe sandbox's
+   **Workbench → Shell**:
+   ```
+   stripe payment_intents confirm pi_... -d payment_method=pm_card_visa -d return_url=https://example.com
+   ```
+   (`return_url` is needed because the payment accepts every method switched on in
+   the dashboard, and some of those leave the page.)
+4. Stripe cannot reach your machine, so ask it: `python manage.py reconcile_payments`.
+   `curl -s -b cookies.txt $API/api/v1/orders/` now shows `paid`, and the listing
+   is `sold`. (On the live site the webhook does this by itself.)
+
+To see a decline, confirm with `-d payment_method=pm_card_chargeDeclined` instead:
+the order stays `pending_payment` and the admin shows the reason on its payment.
+
 ### Sign up and log in from the command line
 
 The web app does exactly this. Run it in a second terminal while `runserver` is
@@ -509,6 +541,12 @@ the branch and the database file. The full log is saved in `~/samwab-build-logs/
 | `check_payments` says "The payment service could not complete this" | Wrong or rolled key, or no internet | Copy the secret key again from the sandbox's API keys page |
 | `ImproperlyConfigured: Set STRIPE_SECRET_KEY ... and STRIPE_WEBHOOK_SECRET` (Render deploy) | A Stripe value is missing in Render | Add both (see Deploying), then deploy again |
 | Stripe shows webhook deliveries failing with 400 | `STRIPE_WEBHOOK_SECRET` is not this endpoint's secret | Reveal the endpoint's secret in Stripe and update it in Render |
+| `POST /api/v1/orders/` says `idempotency_key_missing` | No `Idempotency-Key` header | Send a new key (any unique text, such as a UUID) per purchase; reuse it only to retry the same request |
+| `listing_unavailable` when buying | The listing is sold or withdrawn, or another buyer's 15-minute hold is running (`reserved_until` in browse) | Wait for the hold to end, or choose another piece |
+| `cannot_buy_own_listing` | You are logged in as the seller (the house account) | Log in as a buyer account |
+| An order stays `pending_payment` after paying in the sandbox | On your machine Stripe cannot send the webhook | Run `python manage.py reconcile_payments` |
+| `listing_held` when withdrawing a listing | A buyer's checkout holds it | Wait up to 15 minutes, or run `python manage.py expire_orders` after the hold ends |
+| Stripe's webhook deliveries show 500 | Acting on the event failed; the error is in the admin (Stripe events, `last_error`) | Fix the cause; Stripe retries, and the next delivery is acted on |
 | A test fails only on your machine | Usually an old database or old packages | Re-install packages (step 4); tests never use `db.sqlite3`, so check for local changes with `git status` |
 
 ## Project structure
@@ -524,7 +562,8 @@ apps/                 our code, one folder per business area
                       comparable sales; the catalog manager
     models/           one file per subject; import models from apps.catalog.models
   addresses/          delivery addresses, with the name, street and phone encrypted
-  payments/           the payment provider interface, Stripe, and the Stripe webhook
+  orders/             orders: buy a piece, the checkout hold, and what happens when payments change
+  payments/           the payment provider interface, Stripe, the Stripe webhook, payments and refunds
     providers/        base.py (the interface), stripe.py, fake.py (tests only)
   listings/           listings: a piece for sale, its price history and the public browse API
     state.py          the allowed listing status moves
@@ -582,6 +621,7 @@ Other files at the top of the repository:
 | `idempotency` | The `Idempotency-Key` header (`idempotency_keys`): a create request sent twice does its work once, and the retry gets the first answer. Views use it with `@idempotent`. |
 | `audit` | The audit log (`audit_events`): who changed what, when and from where. Rows are only ever added. Other apps write to it from their services. |
 | `catalog` | What can be sold: brands, categories, named designs (such as the Kelly 28) and materials; the capture protocols staff follow for each category or design; comparable sales for fair prices. Staff run it in the admin site; the API only reads it. |
+| `orders` | Orders: a buyer buying one listed piece, paid in full; the 15-minute checkout hold, cancelling, and acting on what the payment provider confirms. |
 | `payments` | The only app that talks to a payment provider. Stripe today, behind an interface so another provider can be added; Stripe webhooks are checked and stored here. |
 | `addresses` | Delivery addresses a person keeps on their account. The name, street lines and phone are encrypted in the database. |
 | `listings` | Listings: a piece offered for sale at an asking price, with its price history. Staff list house stock in the admin site; buyers browse live listings through the public API. |
@@ -631,6 +671,10 @@ fail at once and never reach the database.
 | `GET /api/v1/product-models/` | Active named designs. Filters: `?brand=<slug>&category=<slug>` | No |
 | `GET /api/v1/me/addresses/` | My delivery addresses, newest first | Yes |
 | `POST /api/v1/me/addresses/` | Add a delivery address | Yes |
+| `GET /api/v1/orders/` | My orders (`?role=seller` for my sales, `?status=`) | Yes |
+| `POST /api/v1/orders/` | Buy a piece (needs an `Idempotency-Key` header) | Yes |
+| `GET /api/v1/orders/{id}/` | One of my orders | Yes |
+| `POST /api/v1/orders/{id}/cancel/` | Cancel before paying | Yes |
 | `POST /webhooks/stripe/` | Stripe sends payment events here (checked by signature) | No (Stripe's signature) |
 | `GET /api/v1/listings/` | Live listings, newest first. Filters: `q`, `brand`, `category`, `condition_min`, `price_max` | No |
 | `GET /api/v1/listings/{id}/` | One live listing | No |
@@ -854,6 +898,54 @@ a repeated delivery changes nothing, and the answer is 200 `{"received": true}` 
 once. A failed check is 400 `webhook_signature_invalid` and stores nothing.
 Events are only stored for now; orders (build E5) act on them. Superusers can read
 them in the admin site (Stripe events).
+
+### Orders
+
+A buyer buys one piece from one live listing, paid in full (house stock).
+**An order's status changes only on our server, from what Stripe confirms, never
+from what the browser says.**
+
+- `POST /api/v1/orders/` with an `Idempotency-Key` header and `listing_id`,
+  `payment_option` (`pay_in_full`; `reserve` is 422 `reservation_not_available`
+  until reservations exist), `delivery_choice` (`keep_in_vault`, or
+  `buyer_courier` with `shipping_address_id`, one of your addresses; it is copied
+  onto the order, encrypted), optional `acquisition_source` and `known_before`.
+  Answers 201 with `order` and `payment` (`client_secret` for Stripe Elements in
+  the browser). The price comes from the listing; anything else sent is ignored.
+- `GET /api/v1/orders/` (yours as buyer; `?role=seller` for your sales;
+  `?status=paid`), `GET /api/v1/orders/{id}/` (404 if you are neither buyer nor
+  seller), `POST /api/v1/orders/{id}/cancel/` (buyer only, while waiting).
+- The order shows `item`, `tax` (0 until Stripe Tax), `total`, `amount_due`,
+  `pay_by` (the hold) and a `timeline`. The seller sees `seller_share` and
+  `commission` instead of `tax` and `amount_due`.
+
+**What goes wrong, and what happens** (each has a test):
+
+| Case | What happens |
+|---|---|
+| The same request twice (double click, retry) | Same `Idempotency-Key`: the first answer again; one order, one payment |
+| Two buyers, same piece, same moment | The listing row is locked; one gets the order, the other 409 `listing_unavailable` (tested with two real connections on PostgreSQL) |
+| Card declined | The order stays `pending_payment`; the reason is kept on the payment (admin); the buyer tries another card on the same payment |
+| Stripe unreachable when ordering | 502 `payment_provider_error`; nothing is saved |
+| Paying twice | One order has one Stripe payment, made with the order's own key; a paid payment cannot be paid again; a listing has one waiting order at most |
+| Webhook missed or late | `python manage.py reconcile_payments` asks Stripe about every waiting order |
+| The same event twice, late, or out of order | Every event makes us ask Stripe for the payment's current state, and orders only move forward: a late failure never undoes a payment |
+| The amount paid is not the order total | Not accepted: logged as an error, the payment shows `amount_mismatch` |
+| The buyer walks away | After 15 minutes (`CHECKOUT_HOLD` in `apps/core/policy.py`) the order is cancelled (`hold_expired`) and its payment cancelled: when the next buyer comes, or by `python manage.py expire_orders` |
+| Money arrives after the order closed (or after the listing was withdrawn) | Refunded in full at once (`missed_deadline`); the order becomes `refunded`; finance sees a warning in the logs |
+| Cancelling just as the payment succeeds | The order ends `paid` and the cancel answers 409 `order_already_paid` |
+
+Statuses (`apps/orders/state.py`): `pending_payment` → `paid` or `cancelled`;
+`cancelled` → `refunded`. A paid order marks its listing `sold`. While an order
+waits, the listing shows `reserved_until` (the hold) in browse, and staff cannot
+withdraw it (409 `listing_held`). Orders, payments and refunds are read-only in
+the admin site (superusers). Not yet: the piece's owner does not change (the
+ownership ledger comes later), and delivery, intake and returns are later builds.
+
+**Webhook processing:** every Stripe payment event makes us read the payment from
+Stripe and act on it inside the webhook request. If acting fails, the event keeps
+the error (`last_error`, `attempts`) and the webhook answers 500, so Stripe sends
+it again. `client_secret` values are removed before events are stored.
 
 ### Listings
 
@@ -1159,7 +1251,7 @@ On your own machine, only `DJANGO_SECRET_KEY` is needed.
 The README is updated in every build.
 
 
-Last build: E4, payments through Stripe (sandbox).
+Last build: E5, orders paid in full.
 
 ## Build history
 
@@ -1185,6 +1277,7 @@ One line per build, newest last. Each build is one feature, merged into `dev`.
 | E2 | 23 Nov 2026 | Listings: `listings` and `listing_price_changes` for house stock; draft, publish (refused until the piece has a listing photo and is in the vault), change the price and withdraw in the admin site, all audited; public `GET /api/v1/listings/` (filters `q`, `brand`, `category`, `condition_min`, `price_max`) and `GET /api/v1/listings/{id}/` |
 | E3 | 23 Nov 2026 | Addresses: `addresses` with the name, street lines and phone encrypted (`EncryptedTextField`, Fernet keys in `DJANGO_FIELD_ENCRYPTION_KEYS`, start-up check `core.E001`, `reencrypt_fields` command); `GET`/`POST /api/v1/me/addresses/` with one default per person and at most 20 |
 | E4 | 23 Nov 2026 | Payments: the payment provider interface with Stripe (`stripe` 17.1.0) and an in-memory fake for tests; `POST /webhooks/stripe/` (signature checked, `stripe_events` stored once by id); `check_payments` command; the live site requires the Stripe keys |
+| E5 | 23 Nov 2026 | Orders paid in full: `orders`, `payments` and `refunds` tables; `POST`/`GET /api/v1/orders/`, `/{id}/`, `/{id}/cancel/`; the 15-minute checkout hold; webhook events acted on (state read from Stripe); late money refunded; `expire_orders` and `reconcile_payments`; browse shows the hold; Stripe's own logging quieter; allauth's admin section renamed |
 
 Builds run in the order the roadmap sets, so numbers can skip: builds 12 to 14 came
 before 06 to 11 to start on what buyers see, then 07, 08, the 08a tidy-up and build 01 (production deploy).

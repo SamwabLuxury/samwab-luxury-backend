@@ -17,3 +17,11 @@ def _empty_cache() -> None:
 def _uploads_in_a_temporary_folder(settings: Any, tmp_path: Path) -> None:
     """Uploaded photos go to a folder deleted after each test, never into the project."""
     settings.MEDIA_ROOT = tmp_path / "media"
+
+
+@pytest.fixture(autouse=True)
+def _empty_fake_payment_provider() -> None:
+    """Every test starts with no payments at the fake provider."""
+    from apps.payments.providers import fake_provider
+
+    fake_provider().reset()
