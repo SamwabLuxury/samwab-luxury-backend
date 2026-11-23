@@ -42,6 +42,7 @@ LOCAL_APPS = [
     "apps.idempotency",
     "apps.catalog",
     "apps.pieces",
+    "apps.listings",
 ]
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 
@@ -176,6 +177,13 @@ USE_TZ = True
 STATIC_URL = "static/"
 # `collectstatic` copies every static file here at deploy time; WhiteNoise serves them.
 STATIC_ROOT = BASE_DIR / "staticfiles"
+
+# Uploaded files (piece photos). On your machine they go to this folder; on the
+# live site the default storage will be a cloud bucket (see README, Deploying).
+MEDIA_URL = "media/"
+MEDIA_ROOT = BASE_DIR / "media"
+# The largest photo staff may upload, in bytes.
+PHOTO_MAX_BYTES = 20 * 1024 * 1024
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 

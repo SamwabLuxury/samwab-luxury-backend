@@ -15,5 +15,6 @@ ROLE_PERMISSIONS: Grants = {
     roles.INTAKE_STAFF: {
         "piece": ("add", "change", "view"),
         "piecematerial": ("add", "change", "delete", "view"),
+        "media": ("add", "change", "delete", "view"),  # the piece's photos
     },
 }

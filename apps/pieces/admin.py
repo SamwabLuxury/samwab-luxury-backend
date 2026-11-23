@@ -4,16 +4,23 @@ Statuses are shown but never edited here: they move only through the state
 machine (``services.move_custody`` and ``services.set_verification``). Saves go
 through the piece services, which record audit events; a change to the materials
 is recorded as one event on the piece.
+
+Photos are added on the piece's page. Each upload is checked and cleaned by
+``photos.prepare`` while the form is validated, so a refused file shows its
+message on the form; saving goes through ``services.add_photo``, ``update_photo``
+and ``delete_photo``.
 """
 
 from typing import Any
 
+from django import forms
 from django.contrib import admin
 from django.http import HttpRequest
+from django.utils.html import format_html
 
 from apps.accounts.models import User
-from apps.pieces import services
-from apps.pieces.models import Piece, PieceMaterial
+from apps.pieces import photos, services
+from apps.pieces.models import Media, Piece, PieceMaterial
 
 
 class PieceMaterialInline(admin.TabularInline):  # type: ignore[type-arg]
@@ -22,6 +29,47 @@ class PieceMaterialInline(admin.TabularInline):  # type: ignore[type-arg]
     autocomplete_fields = ("material",)
     verbose_name = "material"
     verbose_name_plural = "materials"
+
+
+class PhotoForm(forms.ModelForm):  # type: ignore[type-arg]
+    upload = forms.FileField(required=False, label="Photo")
+    # New photos always go last; the order is for moving saved ones.
+    sort_order = forms.IntegerField(required=False, min_value=0, max_value=32767, label="order")
+
+    class Meta:
+        model = Media
+        fields = ("kind", "sort_order")
+
+    def clean(self) -> dict[str, Any]:
+        data: dict[str, Any] = super().clean() or {}
+        upload = data.get("upload")
+        if self.instance._state.adding:
+            if upload is None:
+                self.add_error("upload", "Choose a photo to upload.")
+            else:
+                try:
+                    self.prepared = photos.prepare(upload)
+                except photos.PhotoRejectedError as refused:
+                    self.add_error("upload", refused.message)
+        elif upload is not None:
+            self.add_error("upload", "To use another picture, delete this photo and add a new one.")
+        return data
+
+
+class PhotoInline(admin.TabularInline):  # type: ignore[type-arg]
+    model = Media
+    form = PhotoForm
+    extra = 1
+    fields = ("preview", "upload", "kind", "sort_order")
+    readonly_fields = ("preview",)
+    verbose_name = "photo"
+    verbose_name_plural = "photos (JPEG, PNG or WebP; location data is removed)"
+
+    @admin.display(description="preview")
+    def preview(self, media: Media) -> str:
+        if media._state.adding:  # a new row: nothing uploaded yet
+            return "-"
+        return format_html('<img src="{}" alt="" style="height:80px">', media.file.url)
 
 
 @admin.register(Piece)
@@ -39,7 +87,7 @@ class PieceAdmin(admin.ModelAdmin):  # type: ignore[type-arg]
     list_select_related = ("brand", "category", "category__parent", "current_owner")
     search_fields = ("title", "brand__name", "product_model__name", "serial_or_date_code")
     autocomplete_fields = ("brand", "category", "product_model", "current_owner")
-    inlines = (PieceMaterialInline,)
+    inlines = (PieceMaterialInline, PhotoInline)
     readonly_fields = ("verification_status", "custody_status", "created_at", "updated_at")
     fieldsets = (
         (None, {"fields": ("title", "brand", "category", "product_model", "description")}),
@@ -92,3 +140,35 @@ class PieceAdmin(admin.ModelAdmin):  # type: ignore[type-arg]
         staff: User = request.user  # type: ignore[assignment]
         piece = form.instance
         services.record_materials(piece, before=piece._materials_before, by=staff)
+
+    def save_formset(self, request: HttpRequest, form: Any, formset: Any, change: bool) -> None:
+        if formset.model is not Media:
+            super().save_formset(request, form, formset, change)
+            return
+        staff: User = request.user  # type: ignore[assignment]
+        # The admin writes its history from these lists, which formset.save() would fill.
+        formset.new_objects, formset.changed_objects, formset.deleted_objects = [], [], []
+        for photo_form in formset.deleted_forms:
+            if photo_form.instance.pk:
+                services.delete_photo(photo_form.instance, by=staff)
+                formset.deleted_objects.append(photo_form.instance)
+        for photo_form in formset.initial_forms:
+            if photo_form not in formset.deleted_forms and photo_form.has_changed():
+                data = photo_form.cleaned_data
+                order = data["sort_order"]
+                services.update_photo(
+                    photo_form.instance,
+                    kind=data["kind"],
+                    sort_order=photo_form.initial["sort_order"] if order is None else order,
+                    by=staff,
+                )
+                formset.changed_objects.append((photo_form.instance, photo_form.changed_data))
+        for photo_form in formset.extra_forms:
+            if photo_form not in formset.deleted_forms and photo_form.has_changed():
+                media = services.add_photo(
+                    form.instance,
+                    photo_form.prepared,
+                    kind=photo_form.cleaned_data["kind"],
+                    by=staff,
+                )
+                formset.new_objects.append(media)

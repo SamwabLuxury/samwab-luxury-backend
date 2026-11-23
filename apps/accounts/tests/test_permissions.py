@@ -66,6 +66,10 @@ def test_intake_staff_register_pieces_and_read_the_catalog() -> None:
         "change_piecematerial",
         "delete_piecematerial",
         "view_piecematerial",
+        "add_media",
+        "change_media",
+        "delete_media",
+        "view_media",
     }
     assert codes(roles.INTAKE_STAFF, "catalog") == {
         "view_brand",
