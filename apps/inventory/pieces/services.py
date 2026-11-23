@@ -139,4 +139,5 @@ def delete_photo(media: Media, *, by: User) -> None:
     before, media_id, name = audit.snapshot(media), media.pk, media.stored_name
     media.delete()
     audit.record_deleted(Media, media_id, before=before, by=by)
-    transaction.on_commit(lambda: default_storage.delete(name))
+    # robust: if storage is down, the error is logged and the leftover file is harmless.
+    transaction.on_commit(lambda: default_storage.delete(name), robust=True)

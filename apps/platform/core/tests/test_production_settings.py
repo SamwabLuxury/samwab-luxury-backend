@@ -26,6 +26,7 @@ def load(monkeypatch: pytest.MonkeyPatch) -> Iterator[Load]:
     ):
         monkeypatch.delenv(name, raising=False)
 
+    monkeypatch.setenv("CLOUDINARY_URL", "cloudinary://123:made-up@samwab-test")
     monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_settings_test")
     monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "whsec_settings_test")
 
@@ -121,7 +122,7 @@ def test_production_serves_compressed_static_files_with_hashed_names(load: Load)
     assert storages["staticfiles"]["BACKEND"] == (
         "whitenoise.storage.CompressedManifestStaticFilesStorage"
     )
-    assert storages["default"]["BACKEND"] == "django.core.files.storage.FileSystemStorage"
+    assert storages["default"]["BACKEND"] == "apps.platform.core.storage.CloudinaryStorage"
 
 
 # ---------- email ----------
@@ -196,3 +197,24 @@ def test_production_always_uses_stripe(load: Load) -> None:
 
     provider = production.PAYMENT_PROVIDER
     assert provider == "stripe"
+
+
+# ---------- photos ----------
+
+
+def test_production_refuses_to_start_without_cloudinary(
+    load: Load, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("CLOUDINARY_URL")
+
+    with pytest.raises(ImproperlyConfigured, match="CLOUDINARY_URL"):
+        load(DATABASE_URL=POOLED)
+
+
+def test_production_keeps_photos_on_cloudinary_in_the_live_folder(load: Load) -> None:
+    production = load(DATABASE_URL=POOLED)
+
+    storages = production.STORAGES
+    folder = production.PHOTO_FOLDER
+    assert storages["default"]["BACKEND"] == "apps.platform.core.storage.CloudinaryStorage"
+    assert folder == "samwab/live"

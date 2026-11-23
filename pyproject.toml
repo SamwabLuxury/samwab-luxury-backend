@@ -21,7 +21,7 @@ files = ["apps", "configurations"]
 exclude = ['/migrations/']
 
 [[tool.mypy.overrides]]
-module = ["environ", "allauth.*", "jsonschema.*"]
+module = ["environ", "allauth.*", "jsonschema.*", "cloudinary.*"]
 ignore_missing_imports = true
 
 [tool.django-stubs]

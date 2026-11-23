@@ -175,6 +175,28 @@ def test_deleting_a_photo_removes_the_file_after_the_change_is_saved(
     assert event.object_id == media_id
 
 
+def test_if_storage_is_down_the_photo_is_still_deleted_and_the_error_logged(
+    piece: Piece,
+    clerk: User,
+    django_capture_on_commit_callbacks: Capture,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    from apps.platform.core.storage import PhotoStorageError
+
+    media = add(piece, clerk)
+
+    def down(name: str) -> None:
+        raise PhotoStorageError()
+
+    monkeypatch.setattr(default_storage, "delete", down)
+    with django_capture_on_commit_callbacks(execute=True):
+        services.delete_photo(media, by=clerk)
+
+    assert not Media.objects.exists()
+    assert "PhotoStorageError" in caplog.text
+
+
 def test_a_cancelled_delete_keeps_the_file(piece: Piece, clerk: User) -> None:
     media = add(piece, clerk)
 

@@ -24,3 +24,10 @@ WHITENOISE_AUTOREFRESH = True
 
 # Fast hashing keeps tests quick. Never use this outside tests.
 PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
+
+# Tests keep photos in a temporary folder on disk (apps/conftest.py), never on
+# Cloudinary, even if .env has a CLOUDINARY_URL.
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+}

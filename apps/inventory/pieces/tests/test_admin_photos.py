@@ -203,3 +203,25 @@ def test_a_photo_row_not_yet_saved_has_no_preview() -> None:
     inline = PhotoInline(Piece, django_admin.site)
 
     assert inline.preview(Media()) == "-"
+
+
+def test_if_photo_storage_is_down_staff_see_why_and_nothing_is_half_saved(
+    client: Client, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from apps.inventory.pieces import services
+    from apps.platform.core.storage import PhotoStorageError
+
+    def down(*args: object, **kwargs: object) -> None:
+        raise PhotoStorageError()
+
+    monkeypatch.setattr(services, "add_photo", down)
+    client.force_login(make_staff("intake@samwab.com", "intake_staff"))
+    piece = make_piece()
+
+    rows = photo_rows({"upload": upload(images.jpeg()), "kind": "listing"})
+    response = client.post(
+        f"/admin/pieces/piece/{piece.id}/change/", {**piece_form(piece), **rows}, follow=True
+    )
+
+    assert "could not be saved because photo storage did not answer" in response.content.decode()
+    assert not Media.objects.exists()

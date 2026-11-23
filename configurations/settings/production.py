@@ -68,8 +68,13 @@ if RENDER_HOSTNAME:
 
 # ---------- Static files ----------
 # Compressed, with hashed names so browsers can cache them for ever (WhiteNoise docs).
+# Photos live on Cloudinary: Render's disk is wiped on every deploy.
+CLOUDINARY_URL = env("CLOUDINARY_URL", default="")
+if not CLOUDINARY_URL.startswith("cloudinary://"):
+    raise ImproperlyConfigured("Set CLOUDINARY_URL in Render's environment (Cloudinary console).")
+PHOTO_FOLDER = env("DJANGO_PHOTO_FOLDER", default="samwab/live")
 STORAGES = {
-    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "default": {"BACKEND": "apps.platform.core.storage.CloudinaryStorage"},
     "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
 }
 
