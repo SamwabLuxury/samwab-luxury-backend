@@ -192,10 +192,21 @@ STATIC_URL = "static/"
 # `collectstatic` copies every static file here at deploy time; WhiteNoise serves them.
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
-# Uploaded files (piece photos). On your machine they go to this folder; on the
-# live site the default storage will be a cloud bucket (see README, Deploying).
+# Uploaded files (piece photos). With CLOUDINARY_URL set (in .env), they go to
+# Cloudinary, in PHOTO_FOLDER; without it, to the media/ folder on your machine.
+# The live site always uses Cloudinary (production.py).
 MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"
+CLOUDINARY_URL = env("CLOUDINARY_URL", default="")
+PHOTO_FOLDER = env("DJANGO_PHOTO_FOLDER", default="samwab/local")
+STORAGES = {
+    "default": {
+        "BACKEND": "apps.platform.core.storage.CloudinaryStorage"
+        if CLOUDINARY_URL
+        else "django.core.files.storage.FileSystemStorage"
+    },
+    "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+}
 # The largest photo staff may upload, in bytes.
 PHOTO_MAX_BYTES = 20 * 1024 * 1024
 

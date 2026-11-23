@@ -55,3 +55,26 @@ def test_a_developers_machine_has_a_key_even_without_one_in_env(
     local = importlib.reload(importlib.import_module("configurations.settings.local"))
 
     assert local.FIELD_ENCRYPTION_KEYS == [LOCAL_ONLY_ENCRYPTION_KEY]
+
+
+def test_tests_keep_photos_in_a_folder_on_disk() -> None:
+    from django.conf import settings
+
+    assert settings.STORAGES["default"]["BACKEND"] == "django.core.files.storage.FileSystemStorage"
+
+
+def test_a_cloudinary_url_switches_a_developers_machine_to_cloudinary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import importlib
+
+    monkeypatch.setenv("CLOUDINARY_URL", "cloudinary://123:made-up@samwab-test")
+    base = importlib.reload(importlib.import_module("configurations.settings.base"))
+    try:
+        storages = base.STORAGES
+        folder = base.PHOTO_FOLDER
+        assert storages["default"]["BACKEND"] == "apps.platform.core.storage.CloudinaryStorage"
+        assert folder == "samwab/local"
+    finally:
+        monkeypatch.delenv("CLOUDINARY_URL")
+        importlib.reload(base)
