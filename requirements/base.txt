@@ -13,3 +13,5 @@ tzdata==2026.6
 whitenoise==6.12.0
 # Reads uploaded photos, checks them and removes their hidden location data.
 pillow==13.0.0
+# Encrypts columns such as delivery addresses (Fernet; see apps/core/encryption.py).
+cryptography==50.0.2
