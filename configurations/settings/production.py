@@ -7,7 +7,7 @@ from typing import Any
 
 from django.core.exceptions import ImproperlyConfigured
 
-from apps.core.encryption import LOCAL_ONLY_ENCRYPTION_KEY
+from apps.platform.core.encryption import LOCAL_ONLY_ENCRYPTION_KEY
 
 from .base import *
 from .base import env
@@ -21,7 +21,7 @@ FIELD_ENCRYPTION_KEYS = env.list("DJANGO_FIELD_ENCRYPTION_KEYS", default=[])
 if not FIELD_ENCRYPTION_KEYS or LOCAL_ONLY_ENCRYPTION_KEY in FIELD_ENCRYPTION_KEYS:
     raise ImproperlyConfigured(
         "Set DJANGO_FIELD_ENCRYPTION_KEYS to a key of the live site's own "
-        "(not the local-only key in apps/core/encryption.py)."
+        "(not the local-only key in apps/platform/core/encryption.py)."
     )
 
 # ---------- Payments ----------

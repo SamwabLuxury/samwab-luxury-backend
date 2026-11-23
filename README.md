@@ -182,7 +182,7 @@ Log in to the admin site as a superuser (only admins list pieces for now).
 1. The piece must be house stock in the vault with at least one listing photo.
    On your machine, put it in the vault from `python manage.py shell`:
    ```python
-   from apps.pieces.models import Piece
+   from apps.inventory.pieces.models import Piece
 
    Piece.objects.filter(title="Kelly 28, Gold Togo").update(custody_status="in_vault")
    ```
@@ -303,8 +303,8 @@ Run these with the virtual environment active, from the project folder.
 | Start the app | `python manage.py runserver` |
 | Start it on another port | `python manage.py runserver 8001` |
 | Run every test | `python -m pytest` |
-| Run one test file | `python -m pytest apps/catalog/tests/test_api.py` |
-| Run one test | `python -m pytest apps/catalog/tests/test_api.py::test_brands_are_public_and_match_the_contract` |
+| Run one test file | `python -m pytest apps/inventory/catalog/tests/test_api.py` |
+| Run one test | `python -m pytest apps/inventory/catalog/tests/test_api.py::test_brands_are_public_and_match_the_contract` |
 | Run tests whose name matches | `python -m pytest -k slug` |
 | Run only the tests that failed last time | `python -m pytest --lf` |
 | Stop at the first failure, show prints | `python -m pytest -x -s` |
@@ -361,7 +361,7 @@ We write the test **before** the code. Every change follows the same loop:
 A real example from the catalog:
 
 ```python
-# 1. Red: apps/catalog/tests/test_api.py. Fails: there is no /api/v1/brands/ yet.
+# 1. Red: apps/inventory/catalog/tests/test_api.py. Fails: there is no /api/v1/brands/ yet.
 def test_brands_are_in_alphabetical_order_and_leave_out_retired_ones(client):
     for name in ("Hermès", "Chanel", "Rolex"):
         make_brand(name)
@@ -385,7 +385,7 @@ parts separated by blank lines: set up, act, check.
 
 - Tests live next to the code: `apps/<app>/tests/test_<subject>.py`.
 - Make rows with the app's helpers, such as `make_brand()` or `make_protocol()` in
-  `apps/catalog/tests/helpers.py`. They fill in sensible defaults, so a test only
+  `apps/inventory/catalog/tests/helpers.py`. They fill in sensible defaults, so a test only
   names what it cares about. Add a helper when you add a model.
 - Mark tests that use the database with `pytestmark = pytest.mark.django_db`.
 - Outside services (Stripe, the model service, email, couriers) are replaced with
@@ -547,47 +547,36 @@ the branch and the database file. The full log is saved in `~/samwab-build-logs/
 | An order stays `pending_payment` after paying in the sandbox | On your machine Stripe cannot send the webhook | Run `python manage.py reconcile_payments` |
 | `listing_held` when withdrawing a listing | A buyer's checkout holds it | Wait up to 15 minutes, or run `python manage.py expire_orders` after the hold ends |
 | Stripe's webhook deliveries show 500 | Acting on the event failed; the error is in the admin (Stripe events, `last_error`) | Fix the cause; Stripe retries, and the next delivery is acted on |
+| `ModuleNotFoundError: No module named 'apps.core'` (or `apps.orders`, ...) | Code or a branch from before build T1 uses the old paths | Use the new path: `apps.platform.core`, `apps.shop.orders` (see Project structure). Old branches: merge `dev` into them first |
+| Old folders such as `apps/core/` still show in VS Code after T1 | Python's `__pycache__` folders stayed behind | The T1 script removes them; if one is left, delete it (it holds no code) |
 | A test fails only on your machine | Usually an old database or old packages | Re-install packages (step 4); tests never use `db.sqlite3`, so check for local changes with `git status` |
 
 ## Project structure
 
 ```
-apps/                 our code, one folder per business area
-  accounts/           users: the User model, its manager and its admin screens
-    roles.py          the role names (each one is a Django group)
-    permissions.py    sets each role's admin permissions from code after every migrate
-  audit/              the audit log: one append-only row for every staff change
-  idempotency/        Idempotency-Key handling: a create request sent twice runs once
-  catalog/            brands, categories, designs, materials, capture protocols and
-                      comparable sales; the catalog manager
-    models/           one file per subject; import models from apps.catalog.models
-  addresses/          delivery addresses, with the name, street and phone encrypted
-  orders/             orders: buy a piece, the checkout hold, and what happens when payments change
-  payments/           the payment provider interface, Stripe, the Stripe webhook, payments and refunds
-    providers/        base.py (the interface), stripe.py, fake.py (tests only)
-  listings/           listings: a piece for sale, its price history and the public browse API
-    state.py          the allowed listing status moves
-  pieces/             pieces: one row per physical object, its materials, photos and two statuses
-    models/           pieces.py and media.py; import models from apps.pieces.models
-    photos.py         checks an uploaded photo and removes its hidden data before it is saved
-    api/serializers.py  the public view of a piece (no serial codes, costs or owners)
-    permissions.py    what each staff role may do with pieces (catalog/ has one too)
-    state.py          the allowed status moves (custody and verification)
-  core/               shared building blocks used by every other app
-    ids.py            new_uuid(): the ID every row gets
-    models.py         BaseModel: id, created_at, updated_at
-    money.py          Money: whole cents plus a currency
-    policy.py         time limits and default rates
-    exceptions.py     AppError: what services raise when a rule says no
-    state_machine.py  StateMachine: the allowed moves for any status
-    json_schema.py    check a JSON Schema, and check data against one
-    request_id.py     gives every request an ID
-    client_ip.py      remembers the caller's IP address for the audit log
-    logs.py           puts the request ID on log lines; JSON logs
-    api/              views and URLs
-      errors.py       the one error format
-      pagination.py   the one way lists are paged
-    tests/            tests for this app
+apps/                 our code: apps grouped by area; each folder inside a group is one Django app
+  platform/           shared building blocks every app uses
+    core/             IDs, BaseModel, Money, policy (time limits), errors, state machines,
+                      encrypted fields, request IDs, logs, the API basics
+      api/            errors.py (the one error format), pagination.py (the one way lists are paged)
+    audit/            the audit log: one append-only row for every staff change
+    idempotency/      Idempotency-Key handling: a create request sent twice runs once
+  users/              people
+    accounts/         the User model, sign-up and login (django-allauth), roles and permissions
+    addresses/        delivery addresses, with the name, street and phone encrypted
+  inventory/          what Samwab holds
+    catalog/          brands, categories, designs, materials, capture protocols, comparable sales
+      models/         one file per subject; import models from apps.inventory.catalog.models
+    pieces/           one row per physical object: materials, photos, custody and verification
+      photos.py       checks an uploaded photo and removes its hidden data before it is saved
+      api/serializers.py  the public view of a piece (no serial codes, costs or owners)
+  shop/               selling
+    listings/         a piece for sale, its price history and the public browse API
+    orders/           buying a piece, the 15-minute hold, and what happens when payments change
+  money/              money
+    payments/         the payment provider interface, Stripe, the webhook, payments and refunds
+      providers/      base.py (the interface), stripe.py, fake.py (tests only)
+  conftest.py         test setup shared by every app
 configurations/       project wiring only
   settings/           base.py plus one file per environment
   urls.py             mounts each app's URLs under /api/v1/
@@ -596,7 +585,13 @@ requirements/         base.txt, dev.txt, prod.txt
 .github/workflows/    CI: lint, types, checks and tests on every pull request
 ```
 
-A typical app (`apps/catalog/`) holds `models/` (or `models.py`), `enums.py`,
+Groups are only folders: each app keeps its short name (its label: `catalog`,
+`orders`), which is what the database, migrations, permissions, admin addresses and
+the audit log use, so moving an app between groups changes no data. A new app goes
+in the group of its area, with `name = "apps.<group>.<app>"` in its `apps.py`; an app
+used by several areas (payments, for instance) gets a group of its own.
+
+A typical app (`apps/inventory/catalog/`) holds `models/` (or `models.py`), `enums.py`,
 `exceptions.py`, `selectors.py`, `services.py`, `admin.py`, `api/` (views,
 serializers, URLs), `migrations/` and `tests/`. What each layer does is in
 [Where code goes](#where-code-goes). Files are added when an app needs them, so
@@ -630,25 +625,25 @@ Other files at the top of the repository:
 
 ## Shared building blocks
 
-Every app uses these, so learn them first. They live in `apps/core`.
+Every app uses these, so learn them first. They live in `apps/platform/core`.
 
 | Use | Import | Rule |
 |---|---|---|
-| A new model | `from apps.core.models import BaseModel` | Every model extends `BaseModel`. It adds `id`, `created_at` and `updated_at`. |
-| A new ID | `from apps.core.ids import new_uuid` | IDs are UUID version 7: they sort by creation time and cannot be guessed. |
-| An amount of money | `from apps.core.money import Money` | Money is whole cents plus a currency. Never use floats or decimals. |
-| A time limit or default rate | `from apps.core import policy` | Read the value from `policy`. Never type the number into your own code. |
-| A business rule that says no | `from apps.core.exceptions import AppError` | Services raise `AppError` (or `NotFoundError`, `PermissionDeniedError`, `ConflictError`). They never build an HTTP response. |
-| A secret column (an address, a phone number) | `from apps.core.fields import EncryptedTextField` | Name its column `<name>_enc` (`db_column`). It is encrypted in the database and read back as plain text; it cannot be filtered or sorted on (only `__isnull`). Keys: `DJANGO_FIELD_ENCRYPTION_KEYS` (see "Encrypted columns"). |
-| A status that changes | `from apps.core.state_machine import StateMachine` | One table of allowed moves per status, next to its model (see `apps/pieces/state.py`). Services call `MACHINE.check(current, target)` before changing it; a refused move is 409 `illegal_transition`. |
-| Rules for flexible JSON data | `from apps.core.json_schema import attribute_errors, schema_errors` | Categories and designs describe piece attributes as JSON Schema (draft 2020-12). `schema_errors` checks a schema; `attribute_errors` lists every problem in some data, with where it is. |
-| A list in another order | `from apps.core.api.pagination import ordered_by` | `pagination_class = ordered_by("slug")`. The first field must be unique per row (see Lists and paging). |
-| A change made by staff | `from apps.audit import services as audit` | In the service, inside its transaction: `before = audit.snapshot(row)`, make the change, then `audit.record_saved(row, before=before, by=staff)`. For other actions, `audit.record("retired", row, by=staff, changes=...)`. |
-| A create endpoint (order, bid, listing, refund, payout) | `from apps.idempotency.api import idempotent` | Put `@idempotent` on the view's `post`. It requires the `Idempotency-Key` header, replays the first answer on a retry and adds the header to the API description. |
-| A new staff screen | `apps/<app>/permissions.py` | Say which roles may `add`, `change`, `delete` or `view` each model, and connect it in the app's `ready()` (see `apps/catalog/apps.py`). |
+| A new model | `from apps.platform.core.models import BaseModel` | Every model extends `BaseModel`. It adds `id`, `created_at` and `updated_at`. |
+| A new ID | `from apps.platform.core.ids import new_uuid` | IDs are UUID version 7: they sort by creation time and cannot be guessed. |
+| An amount of money | `from apps.platform.core.money import Money` | Money is whole cents plus a currency. Never use floats or decimals. |
+| A time limit or default rate | `from apps.platform.core import policy` | Read the value from `policy`. Never type the number into your own code. |
+| A business rule that says no | `from apps.platform.core.exceptions import AppError` | Services raise `AppError` (or `NotFoundError`, `PermissionDeniedError`, `ConflictError`). They never build an HTTP response. |
+| A secret column (an address, a phone number) | `from apps.platform.core.fields import EncryptedTextField` | Name its column `<name>_enc` (`db_column`). It is encrypted in the database and read back as plain text; it cannot be filtered or sorted on (only `__isnull`). Keys: `DJANGO_FIELD_ENCRYPTION_KEYS` (see "Encrypted columns"). |
+| A status that changes | `from apps.platform.core.state_machine import StateMachine` | One table of allowed moves per status, next to its model (see `apps/inventory/pieces/state.py`). Services call `MACHINE.check(current, target)` before changing it; a refused move is 409 `illegal_transition`. |
+| Rules for flexible JSON data | `from apps.platform.core.json_schema import attribute_errors, schema_errors` | Categories and designs describe piece attributes as JSON Schema (draft 2020-12). `schema_errors` checks a schema; `attribute_errors` lists every problem in some data, with where it is. |
+| A list in another order | `from apps.platform.core.api.pagination import ordered_by` | `pagination_class = ordered_by("slug")`. The first field must be unique per row (see Lists and paging). |
+| A change made by staff | `from apps.platform.audit import services as audit` | In the service, inside its transaction: `before = audit.snapshot(row)`, make the change, then `audit.record_saved(row, before=before, by=staff)`. For other actions, `audit.record("retired", row, by=staff, changes=...)`. |
+| A create endpoint (order, bid, listing, refund, payout) | `from apps.platform.idempotency.api import idempotent` | Put `@idempotent` on the view's `post`. It requires the `Idempotency-Key` header, replays the first answer on a retry and adds the header to the API description. |
+| A new staff screen | `apps/<app>/permissions.py` | Say which roles may `add`, `change`, `delete` or `view` each model, and connect it in the app's `ready()` (see `apps/inventory/catalog/apps.py`). |
 
 ```python
-from apps.core.money import Money
+from apps.platform.core.money import Money
 
 price = Money(100_000)  # $1,000.00
 commission = price.share(2_500)  # 25% -> Money(25_000)
@@ -687,13 +682,13 @@ The docs and the OpenAPI file are built from the code, so they are always curren
 
 ### Users
 
-- Everyone is a `User` (`apps/accounts/models.py`): buyers, owners, dealers and staff.
+- Everyone is a `User` (`apps/users/accounts/models.py`): buyers, owners, dealers and staff.
 - People log in with their email address. Emails are stored in lowercase, so
   `Ada@Example.com` and `ada@example.com` are the same account.
 - One account per person. Every account can buy, so there is no buyer role.
 - Other roles are Django groups with these names: `owner`, `dealer`, `intake_staff`,
   `reviewer`, `catalog_editor`, `partner`, `support`, `finance`, `admin`
-  (`apps/accounts/roles.py`). `owner` is added when Stripe enables her payouts,
+  (`apps/users/accounts/roles.py`). `owner` is added when Stripe enables her payouts,
   `dealer` when an admin approves her application, and staff roles by an admin in
   the admin site. Sign-up never grants a role.
 - `signup_intent` records which sign-up page she used (`buyer`, `owner` or `dealer`).
@@ -824,7 +819,7 @@ Two statuses, shown in the admin but never edited there:
 | `custody_status` (where it is) | `with_owner`, `in_transit`, `at_intake`, `in_vault`, `with_buyer` | `with_owner` → `in_transit` → `at_intake` → `in_vault` → `in_transit` → `with_buyer` |
 | `verification_status` (is it authentic) | `unverified`, `verified`, `not_authentic` | `unverified` → `verified` or `not_authentic`, decided once |
 
-The moves are in `apps/pieces/state.py`, and only `services.move_custody` and
+The moves are in `apps/inventory/pieces/state.py`, and only `services.move_custody` and
 `services.set_verification` change a status. They lock the row and read the status
 from the database first, so two people acting at once cannot skip a step. Custody
 events (build 16), the ownership ledger (build 17) and authentication checks
@@ -873,7 +868,7 @@ They never appear in the audit log, and `str(address)` shows only the label and 
 
 ### Payments
 
-All payment calls go through **one interface**, `apps/payments/providers/base.py`
+All payment calls go through **one interface**, `apps/money/payments/providers/base.py`
 (`PaymentProvider`): `create_payment`, `get_payment`, `cancel_payment` and
 `read_webhook`. Orders never import Stripe. Another provider (Paystack, say) is one
 new class beside `stripe.py` and a value of `DJANGO_PAYMENT_PROVIDER`.
@@ -931,11 +926,11 @@ from what the browser says.**
 | Webhook missed or late | `python manage.py reconcile_payments` asks Stripe about every waiting order |
 | The same event twice, late, or out of order | Every event makes us ask Stripe for the payment's current state, and orders only move forward: a late failure never undoes a payment |
 | The amount paid is not the order total | Not accepted: logged as an error, the payment shows `amount_mismatch` |
-| The buyer walks away | After 15 minutes (`CHECKOUT_HOLD` in `apps/core/policy.py`) the order is cancelled (`hold_expired`) and its payment cancelled: when the next buyer comes, or by `python manage.py expire_orders` |
+| The buyer walks away | After 15 minutes (`CHECKOUT_HOLD` in `apps/platform/core/policy.py`) the order is cancelled (`hold_expired`) and its payment cancelled: when the next buyer comes, or by `python manage.py expire_orders` |
 | Money arrives after the order closed (or after the listing was withdrawn) | Refunded in full at once (`missed_deadline`); the order becomes `refunded`; finance sees a warning in the logs |
 | Cancelling just as the payment succeeds | The order ends `paid` and the cancel answers 409 `order_already_paid` |
 
-Statuses (`apps/orders/state.py`): `pending_payment` → `paid` or `cancelled`;
+Statuses (`apps/shop/orders/state.py`): `pending_payment` → `paid` or `cancelled`;
 `cancelled` → `refunded`. A paid order marks its listing `sold`. While an order
 waits, the listing shows `reserved_until` (the hold) in browse, and staff cannot
 withdraw it (409 `listing_held`). Orders, payments and refunds are read-only in
@@ -999,7 +994,7 @@ is still live.
 - Listings are never deleted. Every draft, publish, price change and withdrawal is
   an audit event.
 
-Status moves (`apps/listings/state.py`): `draft` → `live` or `withdrawn`;
+Status moves (`apps/shop/listings/state.py`): `draft` → `live` or `withdrawn`;
 `live` → `withdrawn`. Orders (build E5) will add `live` → `sold`.
 
 ### Staff roles and the audit log
@@ -1105,10 +1100,10 @@ size with `?page_size=50` (100 at most), and send it again with every page.
 There are no page numbers.
 
 For developers: a list in another order uses
-`pagination_class = ordered_by("slug")` (`apps/core/api/pagination.py`). The cursor
+`pagination_class = ordered_by("slug")` (`apps/platform/core/api/pagination.py`). The cursor
 stands on the first field only, so that field must be unique per row. When the
 display order is not unique, a selector adds a unique `position` value to sort on
-(see `apps/catalog/selectors.py`); otherwise the previous page can skip rows.
+(see `apps/inventory/catalog/selectors.py`); otherwise the previous page can skip rows.
 
 ### Safe retries: the Idempotency-Key header
 
@@ -1130,7 +1125,7 @@ Keys belong to the logged-in person and last 24 hours; after that the same key
 counts as new. The rules follow the IETF draft *The Idempotency-Key HTTP Header
 Field* and Stripe's practice.
 
-For developers: put `@idempotent` (`apps/idempotency/api.py`) on the view's
+For developers: put `@idempotent` (`apps/platform/idempotency/api.py`) on the view's
 `post`. The view's work and the stored answer are saved in one transaction, so a
 crash never leaves an answer without its work, or work without its answer. No
 endpoint uses it yet: listings, bids and orders will.
@@ -1251,7 +1246,7 @@ On your own machine, only `DJANGO_SECRET_KEY` is needed.
 The README is updated in every build.
 
 
-Last build: E5, orders paid in full.
+Last build: T1, apps grouped by area.
 
 ## Build history
 
@@ -1278,6 +1273,7 @@ One line per build, newest last. Each build is one feature, merged into `dev`.
 | E3 | 23 Nov 2026 | Addresses: `addresses` with the name, street lines and phone encrypted (`EncryptedTextField`, Fernet keys in `DJANGO_FIELD_ENCRYPTION_KEYS`, start-up check `core.E001`, `reencrypt_fields` command); `GET`/`POST /api/v1/me/addresses/` with one default per person and at most 20 |
 | E4 | 23 Nov 2026 | Payments: the payment provider interface with Stripe (`stripe` 17.1.0) and an in-memory fake for tests; `POST /webhooks/stripe/` (signature checked, `stripe_events` stored once by id); `check_payments` command; the live site requires the Stripe keys |
 | E5 | 23 Nov 2026 | Orders paid in full: `orders`, `payments` and `refunds` tables; `POST`/`GET /api/v1/orders/`, `/{id}/`, `/{id}/cancel/`; the 15-minute checkout hold; webhook events acted on (state read from Stripe); late money refunded; `expire_orders` and `reconcile_payments`; browse shows the hold; Stripe's own logging quieter; allauth's admin section renamed |
+| T1 | 23 Nov 2026 | Tidy-up: apps grouped into folders by area (`platform/`, `users/`, `inventory/`, `shop/`, `money/`); app labels, tables, migrations, URLs and the API description unchanged |
 
 Builds run in the order the roadmap sets, so numbers can skip: builds 12 to 14 came
 before 06 to 11 to start on what buyers see, then 07, 08, the 08a tidy-up and build 01 (production deploy).
