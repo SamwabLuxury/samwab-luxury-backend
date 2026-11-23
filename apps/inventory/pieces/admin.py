@@ -14,12 +14,13 @@ and ``delete_photo``.
 from typing import Any
 
 from django import forms
-from django.contrib import admin
+from django.contrib import admin, messages
 from django.http import HttpRequest
 from django.utils.html import format_html
 
 from apps.inventory.pieces import photos, services
 from apps.inventory.pieces.models import Media, Piece, PieceMaterial
+from apps.platform.core.storage import PhotoStorageError
 from apps.users.accounts.models import User
 
 
@@ -165,10 +166,20 @@ class PieceAdmin(admin.ModelAdmin):  # type: ignore[type-arg]
                 formset.changed_objects.append((photo_form.instance, photo_form.changed_data))
         for photo_form in formset.extra_forms:
             if photo_form not in formset.deleted_forms and photo_form.has_changed():
-                media = services.add_photo(
-                    form.instance,
-                    photo_form.prepared,
-                    kind=photo_form.cleaned_data["kind"],
-                    by=staff,
-                )
+                try:
+                    media = services.add_photo(
+                        form.instance,
+                        photo_form.prepared,
+                        kind=photo_form.cleaned_data["kind"],
+                        by=staff,
+                    )
+                except PhotoStorageError:
+                    # Photo storage (Cloudinary) is down: the piece is saved, this photo is not.
+                    self.message_user(
+                        request,
+                        "A photo could not be saved because photo storage did not answer. "
+                        "Add it again in a moment.",
+                        messages.ERROR,
+                    )
+                    continue
                 formset.new_objects.append(media)

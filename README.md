@@ -172,8 +172,23 @@ On your machine:
 1. Open a piece in the admin site (http://127.0.0.1:8000/admin/pieces/piece/).
 2. In **Photos** at the bottom, choose a JPEG, PNG or WebP file, pick its kind
    (listing photo, condition photo or flaw close-up) and save.
-3. The photo shows as a small preview. Its file is in the `media/pieces/` folder,
-   under a new name, with its location data removed.
+3. The photo shows as a small preview, stored under a new name with its location
+   data removed: on Cloudinary if your `.env` has `CLOUDINARY_URL` (folder
+   `samwab/local`), otherwise in the `media/pieces/` folder.
+
+### Check the Cloudinary keys
+
+1. In the Cloudinary console, open **Settings → API Keys** and copy the
+   **API environment variable** (`cloudinary://<api key>:<api secret>@<cloud name>`,
+   with your secret filled in).
+2. Add it to `.env` (never to Git or chat): `CLOUDINARY_URL=cloudinary://...`
+3. Run `python manage.py check_photo_storage`. It uploads a tiny picture, prints its
+   link (open it: a small brown square), deletes it, and says
+   `Photo storage is working (Cloudinary, folder samwab/local).`
+
+Photos you added before setting `CLOUDINARY_URL` stay in `media/` and their previews
+break (their links now point at Cloudinary). Delete those photo rows and add them
+again, or remove `CLOUDINARY_URL` from `.env` to go back to `media/`.
 
 ### List a piece for sale
 
@@ -549,6 +564,10 @@ the branch and the database file. The full log is saved in `~/samwab-build-logs/
 | Stripe's webhook deliveries show 500 | Acting on the event failed; the error is in the admin (Stripe events, `last_error`) | Fix the cause; Stripe retries, and the next delivery is acted on |
 | `ModuleNotFoundError: No module named 'apps.core'` (or `apps.orders`, ...) | Code or a branch from before build T1 uses the old paths | Use the new path: `apps.platform.core`, `apps.shop.orders` (see Project structure). Old branches: merge `dev` into them first |
 | Old folders such as `apps/core/` still show in VS Code after T1 | Python's `__pycache__` folders stayed behind | The T1 script removes them; if one is left, delete it (it holds no code) |
+| `check_photo_storage` says photos are kept on this machine | `.env` has no `CLOUDINARY_URL` | Add it (Try it, "Check the Cloudinary keys") |
+| `check_photo_storage` says "Check CLOUDINARY_URL" | Wrong key or secret, or no internet | Copy the API environment variable again from the Cloudinary console, with the secret filled in |
+| `ImproperlyConfigured: Set CLOUDINARY_URL` (Render deploy) | `CLOUDINARY_URL` is missing in Render | Add it in Render's Environment, then deploy again |
+| Photo previews are broken on your machine | The photos were saved in `media/` before `CLOUDINARY_URL` was set | Delete those photo rows and add them again |
 | A test fails only on your machine | Usually an old database or old packages | Re-install packages (step 4); tests never use `db.sqlite3`, so check for local changes with `git status` |
 
 ## Project structure
@@ -808,7 +827,8 @@ listings add it).
 - **Photos** are added in the Photos list on the piece page (JPEG, PNG or WebP, up
   to 20 MB). Each one is checked and cleaned before it is saved: it is turned
   upright, its hidden data (where and when it was taken, the camera) is removed,
-  and it is stored under a new name in `pieces/<piece id>/`. A saved photo's
+  and it is stored under a new name in `pieces/<piece id>/` (on Cloudinary, see
+  "Photo storage"). A saved photo's
   picture is never replaced: delete it and add a new one. Its kind and order can
   change. New photos go last. A piece with photos cannot be deleted.
 
@@ -893,6 +913,27 @@ a repeated delivery changes nothing, and the answer is 200 `{"received": true}` 
 once. A failed check is 400 `webhook_signature_invalid` and stores nothing.
 Events are only stored for now; orders (build E5) act on them. Superusers can read
 them in the admin site (Stripe events).
+
+### Photo storage
+
+Photos are stored through Django's storage layer, so models and services never
+name the storage. `apps/platform/core/storage.py` (`CloudinaryStorage`, with the
+official `cloudinary` package) sends them to Cloudinary when `CLOUDINARY_URL` is
+set; without it (tests, or your machine if you choose) they go to `media/`.
+
+- A stored name `pieces/<piece id>/<uuid>.jpg` becomes the Cloudinary public ID
+  `<folder>/pieces/<piece id>/<uuid>` (Cloudinary keeps image IDs without the
+  extension), and its link is
+  `https://res.cloudinary.com/<cloud>/image/upload/v1/<folder>/pieces/<piece id>/<uuid>.jpg`.
+  Links are public (buyers see the photos) and built without calling Cloudinary.
+- Uploads never overwrite (`overwrite=False`); deletes also clear Cloudinary's CDN copy.
+- Cloudinary refusing or unreachable: staff see "A photo could not be saved because
+  photo storage did not answer" and the piece is saved without that photo. A
+  deleted photo is removed from the list even if Cloudinary is down (the leftover
+  file is only logged).
+- `python manage.py check_photo_storage` proves the keys work.
+- Folders: `samwab/local` (your machine) and `samwab/live` (the live site), so test
+  uploads never mix with real ones (`DJANGO_PHOTO_FOLDER` to change).
 
 ### Orders
 
@@ -1169,6 +1210,7 @@ Branches). Render builds and starts the new version a few minutes later.
 | `DJANGO_SECRET_KEY` | Press **Generate** |
 | `STRIPE_SECRET_KEY` | The sandbox's secret key, `sk_test_...` (Stripe: Developers → API keys) |
 | `STRIPE_WEBHOOK_SECRET` | The `whsec_...` signing secret of the webhook below |
+| `CLOUDINARY_URL` | Cloudinary's API environment variable, `cloudinary://<api key>:<api secret>@<cloud name>` (Cloudinary console, Settings → API Keys) |
 | `DJANGO_FIELD_ENCRYPTION_KEYS` | A key from `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`, run on your machine. Also keep it in a password manager: without it the addresses cannot be read. Never use Render's **Generate** here (it is not a Fernet key) |
 | `DATABASE_URL` | Neon's **pooled** connection string (the host contains `-pooler`): the running app uses it |
 | `DIRECT_DATABASE_URL` | Neon's **direct** connection string (no `-pooler`): only migrations use it |
@@ -1210,10 +1252,9 @@ login page and the admin's CSS.
 Free Render instances sleep after a while without visitors; the first request
 afterwards takes longer.
 
-**Photos on the live site: not yet.** Render's disk is wiped on every deploy and
-the live site does not serve the `media/` folder, so photos uploaded there now
-would be lost. Upload photos on your machine only until a cloud bucket (S3 or
-Cloudflare R2) is chosen and set up (a later build).
+**Photos on the live site are on Cloudinary** (Render's disk is wiped on every
+deploy), in the folder `samwab/live`. The live site refuses to start without
+`CLOUDINARY_URL`.
 
 ## Settings and environment variables
 
@@ -1227,6 +1268,8 @@ Servers use `configurations.settings.production` (or `staging`).
 | `DJANGO_PAYMENT_PROVIDER` | optional | `stripe` (default) or `fake` (tests). The live site always uses `stripe` |
 | `STRIPE_SECRET_KEY` | staging, production; locally for `check_payments` | Stripe's secret key: `sk_test_...` in the sandbox |
 | `STRIPE_WEBHOOK_SECRET` | staging, production | The webhook's signing secret, `whsec_...` |
+| `CLOUDINARY_URL` | staging, production; optional locally | Where photos are stored. Set: Cloudinary. Not set (your machine only): the `media/` folder |
+| `DJANGO_PHOTO_FOLDER` | optional | The Cloudinary folder: `samwab/local` by default, `samwab/live` on the live site |
 | `DJANGO_FIELD_ENCRYPTION_KEYS` | staging, production (optional locally) | Keys for encrypted columns, comma separated; the first encrypts. See "Encrypted columns" |
 | `DATABASE_URL` | staging, production; optional in tests | The database. Production: Neon's pooled string. Tests: set it to run on PostgreSQL |
 | `DIRECT_DATABASE_URL` | Render's build command | Neon's direct string, used only by `migrate` |
@@ -1246,7 +1289,7 @@ On your own machine, only `DJANGO_SECRET_KEY` is needed.
 The README is updated in every build.
 
 
-Last build: T1, apps grouped by area.
+Last build: E6, photos on Cloudinary.
 
 ## Build history
 
@@ -1274,6 +1317,7 @@ One line per build, newest last. Each build is one feature, merged into `dev`.
 | E4 | 23 Nov 2026 | Payments: the payment provider interface with Stripe (`stripe` 17.1.0) and an in-memory fake for tests; `POST /webhooks/stripe/` (signature checked, `stripe_events` stored once by id); `check_payments` command; the live site requires the Stripe keys |
 | E5 | 23 Nov 2026 | Orders paid in full: `orders`, `payments` and `refunds` tables; `POST`/`GET /api/v1/orders/`, `/{id}/`, `/{id}/cancel/`; the 15-minute checkout hold; webhook events acted on (state read from Stripe); late money refunded; `expire_orders` and `reconcile_payments`; browse shows the hold; Stripe's own logging quieter; allauth's admin section renamed |
 | T1 | 23 Nov 2026 | Tidy-up: apps grouped into folders by area (`platform/`, `users/`, `inventory/`, `shop/`, `money/`); app labels, tables, migrations, URLs and the API description unchanged |
+| E6 | 23 Nov 2026 | Photos on Cloudinary: `CloudinaryStorage` (official `cloudinary` 1.47.0) behind Django's storage layer; folders `samwab/local` and `samwab/live`; the live site requires `CLOUDINARY_URL`; `check_photo_storage`; staff see a clear message if storage is down |
 
 Builds run in the order the roadmap sets, so numbers can skip: builds 12 to 14 came
 before 06 to 11 to start on what buyers see, then 07, 08, the 08a tidy-up and build 01 (production deploy).

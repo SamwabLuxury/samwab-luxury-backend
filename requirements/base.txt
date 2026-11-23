@@ -17,3 +17,5 @@ pillow==13.0.0
 cryptography==50.0.2
 # Payments through Stripe (apps/money/payments/providers/stripe.py).
 stripe==17.1.0
+# Stores piece photos on Cloudinary (apps/platform/core/storage.py).
+cloudinary==1.47.0
