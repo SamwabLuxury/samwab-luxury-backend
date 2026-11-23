@@ -21,6 +21,13 @@ SECRET_KEY = env("DJANGO_SECRET_KEY")
 # Keys for encrypted columns such as addresses (apps/core/encryption.py), comma-separated.
 # The first key encrypts; every key decrypts. Separate from SECRET_KEY on purpose.
 FIELD_ENCRYPTION_KEYS = env.list("DJANGO_FIELD_ENCRYPTION_KEYS", default=[])
+
+# Payments (apps/payments). "stripe", or "fake" in tests. Keys from the Stripe
+# dashboard: the secret key (sk_test_ in the sandbox) and the webhook signing
+# secret (whsec_). Never in Git.
+PAYMENT_PROVIDER = env("DJANGO_PAYMENT_PROVIDER", default="stripe")
+STRIPE_SECRET_KEY = env("STRIPE_SECRET_KEY", default="")
+STRIPE_WEBHOOK_SECRET = env("STRIPE_WEBHOOK_SECRET", default="")
 DEBUG = False
 ALLOWED_HOSTS: list[str] = []
 
@@ -48,6 +55,7 @@ LOCAL_APPS = [
     "apps.pieces",
     "apps.listings",
     "apps.addresses",
+    "apps.payments",
 ]
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 

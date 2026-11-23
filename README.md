@@ -220,6 +220,18 @@ and street are unreadable; only the city is plain:
 python manage.py shell -c "from django.db import connection; c = connection.cursor(); c.execute('SELECT recipient_name_enc, line1_enc, city FROM addresses'); print(c.fetchall())"
 ```
 
+### Check the Stripe sandbox keys
+
+1. In the Stripe dashboard, check the **Sandbox** banner, open **Developers** →
+   **API keys** and copy the **secret key** (`sk_test_...`).
+2. Add it to your `.env` (never to Git or chat):
+   ```
+   STRIPE_SECRET_KEY=sk_test_...
+   ```
+3. Run `python manage.py check_payments`. It makes a $1.00 test payment and
+   cancels it, then says `Payments are working with stripe.` In the dashboard,
+   **Payments** shows the cancelled $1.00. It refuses live keys.
+
 ### Sign up and log in from the command line
 
 The web app does exactly this. Run it in a second terminal while `runserver` is
@@ -492,6 +504,11 @@ the branch and the database file. The full log is saved in `~/samwab-build-logs/
 | `core.E001 ... is not a valid Fernet key` | The key was mistyped, or made some other way | Make one with the Fernet command in "Encrypted columns" |
 | `EncryptionKeyError: A stored value cannot be decrypted` | The key that wrote the data is no longer in `DJANGO_FIELD_ENCRYPTION_KEYS` | Put the old key back (after the new one), run `reencrypt_fields`, then remove it |
 | `FieldError: 'line1' is encrypted, so it cannot be filtered` | A query filters on an encrypted column | Filter on a plain column (city, country) instead |
+| `payments.W001 STRIPE_SECRET_KEY is not set` | No Stripe key in `.env` (a warning; everything else works) | Add the sandbox keys (Try it, "Check the Stripe sandbox keys") |
+| `check_payments` says "This is a live key" | `.env` has `sk_live_...` | Use the sandbox key, `sk_test_...` |
+| `check_payments` says "The payment service could not complete this" | Wrong or rolled key, or no internet | Copy the secret key again from the sandbox's API keys page |
+| `ImproperlyConfigured: Set STRIPE_SECRET_KEY ... and STRIPE_WEBHOOK_SECRET` (Render deploy) | A Stripe value is missing in Render | Add both (see Deploying), then deploy again |
+| Stripe shows webhook deliveries failing with 400 | `STRIPE_WEBHOOK_SECRET` is not this endpoint's secret | Reveal the endpoint's secret in Stripe and update it in Render |
 | A test fails only on your machine | Usually an old database or old packages | Re-install packages (step 4); tests never use `db.sqlite3`, so check for local changes with `git status` |
 
 ## Project structure
@@ -507,6 +524,8 @@ apps/                 our code, one folder per business area
                       comparable sales; the catalog manager
     models/           one file per subject; import models from apps.catalog.models
   addresses/          delivery addresses, with the name, street and phone encrypted
+  payments/           the payment provider interface, Stripe, and the Stripe webhook
+    providers/        base.py (the interface), stripe.py, fake.py (tests only)
   listings/           listings: a piece for sale, its price history and the public browse API
     state.py          the allowed listing status moves
   pieces/             pieces: one row per physical object, its materials, photos and two statuses
@@ -563,6 +582,7 @@ Other files at the top of the repository:
 | `idempotency` | The `Idempotency-Key` header (`idempotency_keys`): a create request sent twice does its work once, and the retry gets the first answer. Views use it with `@idempotent`. |
 | `audit` | The audit log (`audit_events`): who changed what, when and from where. Rows are only ever added. Other apps write to it from their services. |
 | `catalog` | What can be sold: brands, categories, named designs (such as the Kelly 28) and materials; the capture protocols staff follow for each category or design; comparable sales for fair prices. Staff run it in the admin site; the API only reads it. |
+| `payments` | The only app that talks to a payment provider. Stripe today, behind an interface so another provider can be added; Stripe webhooks are checked and stored here. |
 | `addresses` | Delivery addresses a person keeps on their account. The name, street lines and phone are encrypted in the database. |
 | `listings` | Listings: a piece offered for sale at an asking price, with its price history. Staff list house stock in the admin site; buyers browse live listings through the public API. |
 | `pieces` | Pieces: one row per physical object Samwab holds, sells or has checked, with its materials, its photos, its custody status (where it is) and its verification status (is it authentic). Staff register pieces in the admin site. |
@@ -611,6 +631,7 @@ fail at once and never reach the database.
 | `GET /api/v1/product-models/` | Active named designs. Filters: `?brand=<slug>&category=<slug>` | No |
 | `GET /api/v1/me/addresses/` | My delivery addresses, newest first | Yes |
 | `POST /api/v1/me/addresses/` | Add a delivery address | Yes |
+| `POST /webhooks/stripe/` | Stripe sends payment events here (checked by signature) | No (Stripe's signature) |
 | `GET /api/v1/listings/` | Live listings, newest first. Filters: `q`, `brand`, `category`, `condition_min`, `price_max` | No |
 | `GET /api/v1/listings/{id}/` | One live listing | No |
 | `GET /api/v1/docs/` | A page to browse and try every endpoint | No |
@@ -805,6 +826,34 @@ They never appear in the audit log, and `str(address)` shows only the label and 
 - `manage.py check` reports a missing or malformed key as `core.E001`.
 - Encrypted columns cannot be filtered, searched or sorted on; Django raises
   `FieldError`. Only `__isnull` works.
+
+### Payments
+
+All payment calls go through **one interface**, `apps/payments/providers/base.py`
+(`PaymentProvider`): `create_payment`, `get_payment`, `cancel_payment` and
+`read_webhook`. Orders never import Stripe. Another provider (Paystack, say) is one
+new class beside `stripe.py` and a value of `DJANGO_PAYMENT_PROVIDER`.
+
+- **Stripe** (`providers/stripe.py`, package `stripe` 17.1.0, Stripe API version
+  `2026-11-18`): payments are PaymentIntents with automatic payment methods. The
+  web app confirms them in the browser with Stripe Elements and the payment's
+  `client_secret`. Every create sends our idempotency key, so a retry never
+  charges twice. A Stripe failure becomes 502 `payment_provider_error`; Stripe's
+  own message is logged with its request id, never shown.
+- **Fake** (`providers/fake.py`): payments in memory. Tests use it
+  (`DJANGO_PAYMENT_PROVIDER=fake` in the test settings), so tests never call Stripe.
+- `python manage.py check_payments`: a $1.00 test payment, then cancelled. Refuses
+  live keys.
+- `manage.py check` warns `payments.W001` while a Stripe key is missing.
+
+**Webhook** `POST /webhooks/stripe/` (no login, no CSRF token): the
+`Stripe-Signature` header is checked against the raw body with
+`STRIPE_WEBHOOK_SECRET` (Stripe's library; signatures older than 5 minutes are
+refused). A good event is stored once in `stripe_events` by its id (`evt_...`), so
+a repeated delivery changes nothing, and the answer is 200 `{"received": true}` at
+once. A failed check is 400 `webhook_signature_invalid` and stores nothing.
+Events are only stored for now; orders (build E5) act on them. Superusers can read
+them in the admin site (Stripe events).
 
 ### Listings
 
@@ -1031,12 +1080,22 @@ Branches). Render builds and starts the new version a few minutes later.
 |---|---|
 | `DJANGO_SETTINGS_MODULE` | `configurations.settings.production` |
 | `DJANGO_SECRET_KEY` | Press **Generate** |
+| `STRIPE_SECRET_KEY` | The sandbox's secret key, `sk_test_...` (Stripe: Developers → API keys) |
+| `STRIPE_WEBHOOK_SECRET` | The `whsec_...` signing secret of the webhook below |
 | `DJANGO_FIELD_ENCRYPTION_KEYS` | A key from `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`, run on your machine. Also keep it in a password manager: without it the addresses cannot be read. Never use Render's **Generate** here (it is not a Fernet key) |
 | `DATABASE_URL` | Neon's **pooled** connection string (the host contains `-pooler`): the running app uses it |
 | `DIRECT_DATABASE_URL` | Neon's **direct** connection string (no `-pooler`): only migrations use it |
 | `WEB_CONCURRENCY` | `2` (Gunicorn's number of workers) |
 | `DJANGO_EMAIL_TO_LOGS` | `true` until an email service is chosen: emails, such as sign-up codes, are written to Render's **Logs** instead of sent. Remove it and set the `DJANGO_EMAIL_*` variables when the email service exists |
 | `DJANGO_FRONTEND_URL` | The web app's address, when it has one |
+
+**Stripe webhook** (once, in the Stripe sandbox): **Developers** → **Webhooks** →
+**Create an event destination** → **Your account** → payload **Snapshot** → events
+`payment_intent.succeeded`, `payment_intent.payment_failed`,
+`payment_intent.canceled` → **Webhook endpoint** → URL
+`https://<your Render address>/webhooks/stripe/`. Then **Reveal** the signing
+secret (`whsec_...`) and put it in Render as `STRIPE_WEBHOOK_SECRET`. The live site
+refuses to start without both Stripe values.
 
 Render sets `RENDER_EXTERNAL_HOSTNAME` itself (for example
 `samwab-luxury-backnd.onrender.com`); the app accepts that address and trusts it
@@ -1078,6 +1137,9 @@ Servers use `configurations.settings.production` (or `staging`).
 | Variable | Needed in | Meaning |
 |---|---|---|
 | `DJANGO_SECRET_KEY` | everywhere | Long random text used for signing |
+| `DJANGO_PAYMENT_PROVIDER` | optional | `stripe` (default) or `fake` (tests). The live site always uses `stripe` |
+| `STRIPE_SECRET_KEY` | staging, production; locally for `check_payments` | Stripe's secret key: `sk_test_...` in the sandbox |
+| `STRIPE_WEBHOOK_SECRET` | staging, production | The webhook's signing secret, `whsec_...` |
 | `DJANGO_FIELD_ENCRYPTION_KEYS` | staging, production (optional locally) | Keys for encrypted columns, comma separated; the first encrypts. See "Encrypted columns" |
 | `DATABASE_URL` | staging, production; optional in tests | The database. Production: Neon's pooled string. Tests: set it to run on PostgreSQL |
 | `DIRECT_DATABASE_URL` | Render's build command | Neon's direct string, used only by `migrate` |
@@ -1097,7 +1159,7 @@ On your own machine, only `DJANGO_SECRET_KEY` is needed.
 The README is updated in every build.
 
 
-Last build: E3, delivery addresses (encrypted).
+Last build: E4, payments through Stripe (sandbox).
 
 ## Build history
 
@@ -1122,6 +1184,7 @@ One line per build, newest last. Each build is one feature, merged into `dev`.
 | E1 | 23 Nov 2026 | Photos for pieces: the `media` table; uploads in the piece's admin page, checked and cleaned with Pillow (upright, hidden location data removed, new file name, JPEG/PNG/WebP only, 20 MB limit); audited; `intake_staff` may manage photos; `pieces.models` split into one file per subject |
 | E2 | 23 Nov 2026 | Listings: `listings` and `listing_price_changes` for house stock; draft, publish (refused until the piece has a listing photo and is in the vault), change the price and withdraw in the admin site, all audited; public `GET /api/v1/listings/` (filters `q`, `brand`, `category`, `condition_min`, `price_max`) and `GET /api/v1/listings/{id}/` |
 | E3 | 23 Nov 2026 | Addresses: `addresses` with the name, street lines and phone encrypted (`EncryptedTextField`, Fernet keys in `DJANGO_FIELD_ENCRYPTION_KEYS`, start-up check `core.E001`, `reencrypt_fields` command); `GET`/`POST /api/v1/me/addresses/` with one default per person and at most 20 |
+| E4 | 23 Nov 2026 | Payments: the payment provider interface with Stripe (`stripe` 17.1.0) and an in-memory fake for tests; `POST /webhooks/stripe/` (signature checked, `stripe_events` stored once by id); `check_payments` command; the live site requires the Stripe keys |
 
 Builds run in the order the roadmap sets, so numbers can skip: builds 12 to 14 came
 before 06 to 11 to start on what buyers see, then 07, 08, the 08a tidy-up and build 01 (production deploy).
