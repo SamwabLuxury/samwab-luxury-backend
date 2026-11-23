@@ -159,3 +159,10 @@ def test_staff_can_edit_a_users_details(boss_client: Client) -> None:
     user.refresh_from_db()
     assert (user.first_name, user.country, user.timezone) == ("Adaeze", "NG", "Africa/Lagos")
     assert user.check_password(PASSWORD) is True
+
+
+def test_the_admin_menu_names_allauths_section_differently_from_ours() -> None:
+    from django.apps import apps
+
+    assert apps.get_app_config("account").verbose_name == "Sign-in email addresses"
+    assert apps.get_app_config("accounts").verbose_name != "Sign-in email addresses"

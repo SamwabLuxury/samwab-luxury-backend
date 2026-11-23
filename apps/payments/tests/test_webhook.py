@@ -45,7 +45,7 @@ def test_a_signed_event_is_stored_and_answered_200() -> None:
         False,
     )
     assert stored.payload["data"]["object"]["id"] == "pi_test_123"
-    assert stored.processed_at is None  # processing comes with orders (build E5)
+    assert stored.processed_at is not None  # acted on (not one of our payments: nothing to do)
 
 
 def test_the_same_event_twice_is_stored_once(client: Client) -> None:

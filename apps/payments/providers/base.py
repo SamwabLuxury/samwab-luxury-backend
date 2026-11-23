@@ -19,6 +19,15 @@ class ProviderPayment:
     status: str
     amount: Money
     client_secret: str = field(repr=False)  # the browser needs it; never log it
+    amount_received: Money | None = None
+    failure_reason: str = ""  # the last attempt's error, for support ("card_declined: ...")
+
+
+@dataclass(frozen=True)
+class ProviderRefund:
+    id: str
+    status: str
+    amount: Money
 
 
 @dataclass(frozen=True)
@@ -45,6 +54,10 @@ class PaymentProvider(Protocol):
     def get_payment(self, payment_id: str) -> ProviderPayment: ...
 
     def cancel_payment(self, payment_id: str) -> ProviderPayment: ...
+
+    def refund_payment(
+        self, payment_id: str, amount: Money, *, idempotency_key: str
+    ) -> ProviderRefund: ...
 
     def read_webhook(self, body: bytes, signature: str | None) -> ProviderEvent:
         """Check the signature on the raw body and return the event, or raise

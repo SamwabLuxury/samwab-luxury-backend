@@ -18,8 +18,9 @@ class StripeWebhookView(APIView):
     @extend_schema(
         summary="Stripe webhook",
         description="Checked with the Stripe-Signature header against the raw body, stored once "
-        "by event id and answered with 200 at once. A failed check is 400 "
-        "`webhook_signature_invalid`.",
+        "by event id, then acted on: for payment events the payment's current state is read "
+        "from Stripe. 200 when done; 500 if acting on it failed (Stripe retries). A failed "
+        "check is 400 `webhook_signature_invalid`.",
         operation_id="webhook_stripe",
         tags=["Webhooks"],
         auth=[],
@@ -30,5 +31,6 @@ class StripeWebhookView(APIView):
         # The raw bytes, before anything parses them: the signature covers them exactly.
         body = request._request.body
         event = get_provider().read_webhook(body, request.headers.get("Stripe-Signature"))
-        services.record_stripe_event(event)
+        stored, _ = services.record_stripe_event(event)
+        services.handle_stripe_event(stored)
         return Response({"received": True})

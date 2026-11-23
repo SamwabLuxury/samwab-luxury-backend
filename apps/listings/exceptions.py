@@ -16,3 +16,8 @@ class PieceAlreadyListedError(ConflictError):
 class ListingClosedError(ConflictError):
     code = "listing_closed"
     message = "This listing is closed; its price can no longer change."
+
+
+class ListingHeldError(ConflictError):
+    code = "listing_held"
+    message = "A buyer is paying for this piece right now. Try again after their 15-minute hold."
