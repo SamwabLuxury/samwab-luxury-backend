@@ -26,6 +26,9 @@ def load(monkeypatch: pytest.MonkeyPatch) -> Iterator[Load]:
     ):
         monkeypatch.delenv(name, raising=False)
 
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_settings_test")
+    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "whsec_settings_test")
+
     def _load(**env: str) -> ModuleType:
         for name, value in env.items():
             monkeypatch.setenv(name, value)
@@ -170,3 +173,26 @@ def test_production_reads_its_own_keys(load: Load) -> None:
 
     keys = production.FIELD_ENCRYPTION_KEYS
     assert keys == [new, old]
+
+
+# ---------- payments ----------
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("STRIPE_SECRET_KEY", ""),
+        ("STRIPE_SECRET_KEY", "pk_test_publishable_by_mistake"),
+        ("STRIPE_WEBHOOK_SECRET", ""),
+    ],
+)
+def test_production_refuses_to_start_without_stripe_keys(load: Load, name: str, value: str) -> None:
+    with pytest.raises(ImproperlyConfigured, match="STRIPE_SECRET_KEY"):
+        load(DATABASE_URL=POOLED, **{name: value})
+
+
+def test_production_always_uses_stripe(load: Load) -> None:
+    production = load(DATABASE_URL=POOLED, DJANGO_PAYMENT_PROVIDER="fake")
+
+    provider = production.PAYMENT_PROVIDER
+    assert provider == "stripe"

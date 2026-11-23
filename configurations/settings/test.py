@@ -4,6 +4,8 @@ import os
 
 # Tests must not depend on a developer's .env file.
 os.environ.setdefault("DJANGO_SECRET_KEY", "test-only-key-never-used-outside-tests")
+# Tests never call Stripe: payments go to an in-memory fake unless a test says otherwise.
+os.environ.setdefault("DJANGO_PAYMENT_PROVIDER", "fake")
 os.environ.setdefault(
     "DJANGO_FIELD_ENCRYPTION_KEYS", "i_UVkyyO7uKcC3RJ1QVaTgS3GFtCyix6-8zBMYWbADI="
 )
