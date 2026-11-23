@@ -1,0 +1,34 @@
+"""Webhooks from payment providers. No login and no CSRF token: the signature
+on the raw body is the proof that the request comes from Stripe."""
+
+from drf_spectacular.utils import OpenApiResponse, extend_schema
+from rest_framework.permissions import AllowAny
+from rest_framework.request import Request
+from rest_framework.response import Response
+from rest_framework.views import APIView
+
+from apps.payments import services
+from apps.payments.providers import get_provider
+
+
+class StripeWebhookView(APIView):
+    authentication_classes = ()  # no session, so no CSRF check
+    permission_classes = (AllowAny,)
+
+    @extend_schema(
+        summary="Stripe webhook",
+        description="Checked with the Stripe-Signature header against the raw body, stored once "
+        "by event id and answered with 200 at once. A failed check is 400 "
+        "`webhook_signature_invalid`.",
+        operation_id="webhook_stripe",
+        tags=["Webhooks"],
+        auth=[],
+        request={"application/json": {"type": "object"}},
+        responses={200: OpenApiResponse(description="Received")},
+    )
+    def post(self, request: Request) -> Response:
+        # The raw bytes, before anything parses them: the signature covers them exactly.
+        body = request._request.body
+        event = get_provider().read_webhook(body, request.headers.get("Stripe-Signature"))
+        services.record_stripe_event(event)
+        return Response({"received": True})

@@ -24,6 +24,19 @@ if not FIELD_ENCRYPTION_KEYS or LOCAL_ONLY_ENCRYPTION_KEY in FIELD_ENCRYPTION_KE
         "(not the local-only key in apps/core/encryption.py)."
     )
 
+# ---------- Payments ----------
+# The live site always uses Stripe, with keys from Render's environment.
+PAYMENT_PROVIDER = "stripe"
+STRIPE_SECRET_KEY = env("STRIPE_SECRET_KEY", default="")
+STRIPE_WEBHOOK_SECRET = env("STRIPE_WEBHOOK_SECRET", default="")
+if not STRIPE_SECRET_KEY.startswith(("sk_", "rk_")) or not STRIPE_WEBHOOK_SECRET.startswith(
+    "whsec_"
+):
+    raise ImproperlyConfigured(
+        "Set STRIPE_SECRET_KEY (sk_test_... in the sandbox) and STRIPE_WEBHOOK_SECRET "
+        "(whsec_...) in Render's environment."
+    )
+
 # ---------- Database: Neon PostgreSQL ----------
 # DATABASE_URL is Neon's *pooled* connection string (its host contains "-pooler").
 # Migrations use the direct string instead; Render's build command passes it.
