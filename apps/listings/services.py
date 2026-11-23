@@ -13,6 +13,7 @@ from apps.audit import services as audit
 from apps.listings.enums import Fulfilment, ListingStatus
 from apps.listings.exceptions import (
     ListingClosedError,
+    ListingHeldError,
     ListingNotReadyError,
     PieceAlreadyListedError,
 )
@@ -62,7 +63,7 @@ def missing_before_publishing(listing: Listing) -> list[str]:
     return missing
 
 
-def _move(listing: Listing, to: str, *, verb: str, by: User) -> Listing:
+def _move(listing: Listing, to: str, *, verb: str, by: User | None) -> Listing:
     current = _locked(listing)
     was = current.status
     LISTING.check(was, to)
@@ -86,8 +87,20 @@ def publish_listing(listing: Listing, *, by: User) -> Listing:
 
 @transaction.atomic
 def withdraw_listing(listing: Listing, *, by: User) -> Listing:
-    """Take a draft or live listing off sale. A withdrawn listing stays closed."""
+    """Take a draft or live listing off sale. A withdrawn listing stays closed.
+
+    Refused while a buyer's checkout holds it (409 ``listing_held``): wait for the
+    payment or for the hold to run out.
+    """
+    held = listing.orders.filter(status="pending_payment", hold_until__gt=timezone.now())
+    if held.exists():
+        raise ListingHeldError()
     return _move(listing, ListingStatus.WITHDRAWN, verb="withdrawn", by=by)
+
+
+def mark_sold(listing: Listing) -> Listing:
+    """A paid order sold the piece. Called by orders inside their transaction."""
+    return _move(listing, ListingStatus.SOLD, verb="sold", by=None)
 
 
 @transaction.atomic

@@ -127,6 +127,7 @@ def _sign_raw(body: bytes) -> tuple[bytes, str]:
 
 def test_the_fake_provider_keeps_payments_in_memory() -> None:
     fake = FakeProvider()
+    fake.fail_next = False
 
     made = fake.create_payment(Money(500), reference="order-1", idempotency_key="k1")
     again = fake.create_payment(Money(500), reference="order-1", idempotency_key="k1")
@@ -152,3 +153,42 @@ def test_settings_choose_the_provider() -> None:
         STRIPE_WEBHOOK_SECRET="whsec_x",  # noqa: S106 (made up)
     ):
         assert isinstance(get_provider(), StripeProvider)
+
+
+def test_a_payment_reports_what_was_received_and_why_it_failed() -> None:
+    http = RecordingHTTPClient(
+        payment_intent(
+            status="requires_payment_method",
+            amount_received=0,
+            last_payment_error={"code": "card_declined", "message": "Your card was declined."},
+        )
+    )
+
+    payment = stripe_with(http).get_payment("pi_test_123")
+
+    assert payment.amount_received == Money(0)
+    assert payment.failure_reason == "card_declined: Your card was declined."
+
+
+def test_refunding_sends_the_amount_and_our_key() -> None:
+    http = RecordingHTTPClient(
+        {"id": "re_1", "object": "refund", "amount": 500, "currency": "usd", "status": "succeeded"}
+    )
+
+    refund = stripe_with(http).refund_payment("pi_test_123", Money(500), idempotency_key="refund-1")
+
+    assert (refund.id, refund.status, refund.amount) == ("re_1", "succeeded", Money(500))
+    [call] = http.calls
+    assert call["url"].endswith("/v1/refunds")
+    assert call["data"]["payment_intent"] == ["pi_test_123"]
+    assert call["data"]["amount"] == ["500"]
+    assert call["headers"]["Idempotency-Key"] == "refund-1"
+
+
+def test_a_refused_refund_becomes_our_error() -> None:
+    http = RecordingHTTPClient(
+        {"error": {"type": "invalid_request_error", "code": "charge_already_refunded"}}, status=400
+    )
+
+    with pytest.raises(PaymentProviderError):
+        stripe_with(http).refund_payment("pi_test_123", Money(500), idempotency_key="refund-1")

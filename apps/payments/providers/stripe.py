@@ -13,7 +13,7 @@ import stripe
 
 from apps.core.money import Money
 from apps.payments.exceptions import PaymentProviderError, WebhookSignatureError
-from apps.payments.providers.base import ProviderEvent, ProviderPayment
+from apps.payments.providers.base import ProviderEvent, ProviderPayment, ProviderRefund
 
 logger = logging.getLogger(__name__)
 
@@ -38,11 +38,18 @@ class StripeProvider:
                 "stripe %s failed: %s (request %s)", what, failure.code, failure.request_id
             )
             raise PaymentProviderError() from failure
+        currency = intent.currency.upper()
+        data = intent.to_dict()  # Stripe objects are not dicts; optional fields may be absent
+        error = data.get("last_payment_error") or {}
+        reason = ": ".join(part for part in (error.get("code"), error.get("message")) if part)
+        received = data.get("amount_received")
         return ProviderPayment(
             id=intent.id,
             status=intent.status,
-            amount=Money(intent.amount, intent.currency.upper()),
+            amount=Money(intent.amount, currency),
             client_secret=intent.client_secret or "",
+            amount_received=None if received is None else Money(received, currency),
+            failure_reason=reason,
         )
 
     def create_payment(
@@ -66,6 +73,25 @@ class StripeProvider:
 
     def cancel_payment(self, payment_id: str) -> ProviderPayment:
         return self._call("cancel", lambda: self._client.v1.payment_intents.cancel(payment_id))
+
+    def refund_payment(
+        self, payment_id: str, amount: Money, *, idempotency_key: str
+    ) -> ProviderRefund:
+        params: Any = {"payment_intent": payment_id, "amount": amount.amount_minor}
+        try:
+            refund = self._client.v1.refunds.create(
+                params, options={"idempotency_key": idempotency_key}
+            )
+        except stripe.StripeError as failure:
+            logger.warning(
+                "stripe refund failed: %s (request %s)", failure.code, failure.request_id
+            )
+            raise PaymentProviderError() from failure
+        return ProviderRefund(
+            id=refund.id,
+            status=refund.status or "",
+            amount=Money(refund.amount, refund.currency.upper()),
+        )
 
     def read_webhook(self, body: bytes, signature: str | None) -> ProviderEvent:
         if not self._webhook_secret:

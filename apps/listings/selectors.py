@@ -3,7 +3,8 @@
 The public sees live listings only, and never a piece found not authentic.
 """
 
-from django.db.models import Prefetch, Q, QuerySet
+from django.db.models import Max, Prefetch, Q, QuerySet
+from django.db.models.functions import Now
 
 from apps.listings.enums import ListingStatus
 from apps.listings.models import Listing
@@ -44,6 +45,13 @@ def public_listings(
         .select_related("piece__brand", "piece__category", "piece__product_model")
         .prefetch_related(
             Prefetch("piece__photos", queryset=Media.objects.order_by("sort_order", "id"))
+        )
+        # Until when a buyer's checkout holds the piece (shown as reserved_until).
+        .annotate(
+            held_until=Max(
+                "orders__hold_until",
+                filter=Q(orders__status="pending_payment", orders__hold_until__gt=Now()),
+            )
         )
     )
     if brand_slug:

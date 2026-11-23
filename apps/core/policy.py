@@ -23,3 +23,7 @@ VAULT_TRADE_HOLDING_PERIOD: Final = timedelta(days=7)
 # The reservation deposit as a share of the price, in basis points (5,000 = 50%).
 # Staff can set a different rate on a fee schedule; this is the starting value.
 DEFAULT_RESERVATION_DEPOSIT_BPS: Final = 5_000
+
+# How long an unpaid checkout holds a piece before it goes back on sale
+# (the lead, 23 Nov 2026). Not the reservation above, which needs a deposit.
+CHECKOUT_HOLD: Final = timedelta(minutes=15)

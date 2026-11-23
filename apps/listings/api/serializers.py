@@ -19,8 +19,7 @@ class ListingSerializer(serializers.ModelSerializer[Listing]):
         "reservations are built."
     )
     reserved_until = serializers.SerializerMethodField(
-        help_text="Set while another buyer holds a reservation. Always null until "
-        "reservations are built."
+        help_text="Set while another buyer's checkout holds the piece (15 minutes)."
     )
     verification_label = serializers.SerializerMethodField()
 
@@ -43,8 +42,9 @@ class ListingSerializer(serializers.ModelSerializer[Listing]):
         return False
 
     @extend_schema_field(serializers.DateTimeField(allow_null=True))
-    def get_reserved_until(self, listing: Listing) -> None:
-        return None
+    def get_reserved_until(self, listing: Listing) -> Any:
+        held = getattr(listing, "held_until", None)
+        return serializers.DateTimeField().to_representation(held) if held else None
 
     @extend_schema_field(
         serializers.ChoiceField(choices=["verified", "verification_pending", "buyer_authenticates"])

@@ -43,7 +43,7 @@ THIRD_PARTY_APPS = [
     "rest_framework",
     "drf_spectacular",
     "allauth",
-    "allauth.account",
+    "apps.accounts.allauth_config.EmailAddressesConfig",  # allauth.account, renamed
     "allauth.headless",
 ]
 LOCAL_APPS = [
@@ -56,6 +56,7 @@ LOCAL_APPS = [
     "apps.listings",
     "apps.addresses",
     "apps.payments",
+    "apps.orders",
 ]
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 
@@ -221,6 +222,11 @@ SPECTACULAR_SETTINGS: dict[str, Any] = {
     "DESCRIPTION": "Back end for Samwab Luxury.",
     "VERSION": "1.0.0",
     "SCHEMA_PATH_PREFIX": "/api/v1",
+    # Several models have a "status"; give each list of statuses its own name.
+    "ENUM_NAME_OVERRIDES": {
+        "OrderStatusEnum": "apps.orders.enums.OrderStatus",
+        "ListingStatusEnum": "apps.listings.enums.ListingStatus",
+    },
     "SERVE_INCLUDE_SCHEMA": False,
     # Anyone can read the API description for now. Reviewed in the security build.
     "SERVE_PERMISSIONS": ["rest_framework.permissions.AllowAny"],
@@ -250,5 +256,7 @@ LOGGING: dict[str, Any] = {
     "root": {"handlers": ["console"], "level": "INFO"},
     "loggers": {
         "django": {"handlers": ["console"], "level": "INFO", "propagate": False},
+        # Stripe's library logs every request at INFO; keep only its warnings.
+        "stripe": {"handlers": ["console"], "level": "WARNING", "propagate": False},
     },
 }
