@@ -82,6 +82,7 @@ jobs:
           DATABASE_URL: postgres://samwab:samwab@localhost:5432/samwab?sslmode=disable
         run: |
           export DJANGO_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(50))')"
+          export DJANGO_FIELD_ENCRYPTION_KEYS="$(python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')"
           python manage.py check --deploy --fail-level WARNING
           python manage.py collectstatic --no-input
           python manage.py migrate --no-input
@@ -95,6 +96,7 @@ jobs:
           PORT: "8000"
         run: |
           export DJANGO_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(50))')"
+          export DJANGO_FIELD_ENCRYPTION_KEYS="$(python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')"
           gunicorn configurations.wsgi:application --daemon --pid gunicorn.pid
           for attempt in $(seq 1 20); do
             curl -sf http://localhost:8000/api/v1/health/ && break

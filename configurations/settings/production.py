@@ -5,10 +5,24 @@ Everything sensitive comes from environment variables, set in Render's dashboard
 
 from typing import Any
 
+from django.core.exceptions import ImproperlyConfigured
+
+from apps.core.encryption import LOCAL_ONLY_ENCRYPTION_KEY
+
 from .base import *
 from .base import env
 
 DEBUG = False
+
+# ---------- Encrypted columns ----------
+# Keep these keys safe: without them, addresses cannot be read. Make one with
+#   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+FIELD_ENCRYPTION_KEYS = env.list("DJANGO_FIELD_ENCRYPTION_KEYS", default=[])
+if not FIELD_ENCRYPTION_KEYS or LOCAL_ONLY_ENCRYPTION_KEY in FIELD_ENCRYPTION_KEYS:
+    raise ImproperlyConfigured(
+        "Set DJANGO_FIELD_ENCRYPTION_KEYS to a key of the live site's own "
+        "(not the local-only key in apps/core/encryption.py)."
+    )
 
 # ---------- Database: Neon PostgreSQL ----------
 # DATABASE_URL is Neon's *pooled* connection string (its host contains "-pooler").

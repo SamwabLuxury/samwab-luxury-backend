@@ -11,6 +11,7 @@ urlpatterns: list[URLPattern | URLResolver] = [
     path("api/v1/", include("apps.accounts.api.urls")),
     path("api/v1/", include("apps.catalog.api.urls")),
     path("api/v1/", include("apps.listings.api.urls")),
+    path("api/v1/", include("apps.addresses.api.urls")),
     # Sign-up, login, email codes and password reset (django-allauth, headless).
     path("_allauth/", include("allauth.headless.urls")),
 ]

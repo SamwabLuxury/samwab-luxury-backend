@@ -41,3 +41,17 @@ def test_ci_runs_the_tests_on_postgresql_through_database_url(
         "db.example",
         5433,
     )
+
+
+def test_a_developers_machine_has_a_key_even_without_one_in_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import importlib
+
+    from apps.core.encryption import LOCAL_ONLY_ENCRYPTION_KEY
+    from configurations.settings import base
+
+    monkeypatch.setattr(base, "FIELD_ENCRYPTION_KEYS", [])
+    local = importlib.reload(importlib.import_module("configurations.settings.local"))
+
+    assert local.FIELD_ENCRYPTION_KEYS == [LOCAL_ONLY_ENCRYPTION_KEY]

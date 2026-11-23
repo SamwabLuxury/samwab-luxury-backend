@@ -140,3 +140,33 @@ def test_only_the_deliberate_checks_are_switched_off(load: Load) -> None:
     assert load(DATABASE_URL=POOLED).SILENCED_SYSTEM_CHECKS == ["security.W021"]
     with_logs = load(DATABASE_URL=POOLED, DJANGO_EMAIL_TO_LOGS="true")
     assert with_logs.SILENCED_SYSTEM_CHECKS == ["security.W021", "mail.E001"]
+
+
+# ---------- encrypted columns ----------
+
+
+def test_production_refuses_to_start_without_encryption_keys(
+    load: Load, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("DJANGO_FIELD_ENCRYPTION_KEYS")
+
+    with pytest.raises(ImproperlyConfigured, match="DJANGO_FIELD_ENCRYPTION_KEYS"):
+        load(DATABASE_URL=POOLED)
+
+
+def test_production_refuses_the_public_local_key(load: Load) -> None:
+    from apps.core.encryption import LOCAL_ONLY_ENCRYPTION_KEY
+
+    with pytest.raises(ImproperlyConfigured, match="local-only"):
+        load(DATABASE_URL=POOLED, DJANGO_FIELD_ENCRYPTION_KEYS=LOCAL_ONLY_ENCRYPTION_KEY)
+
+
+def test_production_reads_its_own_keys(load: Load) -> None:
+    from cryptography.fernet import Fernet
+
+    new, old = Fernet.generate_key().decode(), Fernet.generate_key().decode()
+
+    production = load(DATABASE_URL=POOLED, DJANGO_FIELD_ENCRYPTION_KEYS=f"{new},{old}")
+
+    keys = production.FIELD_ENCRYPTION_KEYS
+    assert keys == [new, old]
