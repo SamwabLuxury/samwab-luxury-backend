@@ -13,7 +13,7 @@ tzdata==2026.6
 whitenoise==6.12.0
 # Reads uploaded photos, checks them and removes their hidden location data.
 pillow==13.0.0
-# Encrypts columns such as delivery addresses (Fernet; see apps/core/encryption.py).
+# Encrypts columns such as delivery addresses (Fernet; see apps/platform/core/encryption.py).
 cryptography==50.0.2
-# Payments through Stripe (apps/payments/providers/stripe.py).
+# Payments through Stripe (apps/money/payments/providers/stripe.py).
 stripe==17.1.0
