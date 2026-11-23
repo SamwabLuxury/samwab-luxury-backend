@@ -167,6 +167,14 @@ On your machine:
 3. Open http://127.0.0.1:8000/api/v1/brands/ and
    http://127.0.0.1:8000/api/v1/product-models/?brand=hermes to see them in the API.
 
+### Photos of a piece
+
+1. Open a piece in the admin site (http://127.0.0.1:8000/admin/pieces/piece/).
+2. In **Photos** at the bottom, choose a JPEG, PNG or WebP file, pick its kind
+   (listing photo, condition photo or flaw close-up) and save.
+3. The photo shows as a small preview. Its file is in the `media/pieces/` folder,
+   under a new name, with its location data removed.
+
 ### Staff roles and the audit log
 
 1. Open http://127.0.0.1:8000/admin/audit/auditevent/. Every change you just made
@@ -439,6 +447,10 @@ the branch and the database file. The full log is saved in `~/samwab-build-logs/
 | No sign-up code arrives | Emails are not sent from your machine | Look in the `runserver` terminal |
 | A build script says `You have uncommitted changes` | `git status` shows changed files | Commit them, or ask the lead before discarding anything |
 | A build script says a file `is not the version from the last build` | That file was edited by hand | Send that file to the lead engineer; the next script will keep your change |
+| Uploading a photo says `Upload a JPEG, PNG or WebP image.` | The file is another format (HEIC from an iPhone, GIF, PDF) or not an image | Export it as JPEG first (on an iPhone: Settings, Camera, Formats, Most Compatible) |
+| Uploading a photo says it is too large | Over 20 MB, or more pixels than Pillow's safety limit | Resize it before uploading; 3000 pixels on the long side is plenty |
+| `To use another picture, delete this photo and add a new one.` | A saved photo's file is never replaced, so the audit log always matches the file | Tick **Delete** on that row and add the new picture in an empty row |
+| A photo's preview is a broken image | The file is missing from `media/` (another machine's database, or a deleted folder) | Delete that photo row and upload it again |
 | A test fails only on your machine | Usually an old database or old packages | Re-install packages (step 4); tests never use `db.sqlite3`, so check for local changes with `git status` |
 
 ## Project structure
@@ -453,7 +465,9 @@ apps/                 our code, one folder per business area
   catalog/            brands, categories, designs, materials, capture protocols and
                       comparable sales; the catalog manager
     models/           one file per subject; import models from apps.catalog.models
-  pieces/             pieces: one row per physical object, its materials and its two statuses
+  pieces/             pieces: one row per physical object, its materials, photos and two statuses
+    models/           pieces.py and media.py; import models from apps.pieces.models
+    photos.py         checks an uploaded photo and removes its hidden data before it is saved
     permissions.py    what each staff role may do with pieces (catalog/ has one too)
     state.py          the allowed status moves (custody and verification)
   core/               shared building blocks used by every other app
@@ -504,7 +518,7 @@ Other files at the top of the repository:
 | `idempotency` | The `Idempotency-Key` header (`idempotency_keys`): a create request sent twice does its work once, and the retry gets the first answer. Views use it with `@idempotent`. |
 | `audit` | The audit log (`audit_events`): who changed what, when and from where. Rows are only ever added. Other apps write to it from their services. |
 | `catalog` | What can be sold: brands, categories, named designs (such as the Kelly 28) and materials; the capture protocols staff follow for each category or design; comparable sales for fair prices. Staff run it in the admin site; the API only reads it. |
-| `pieces` | Pieces: one row per physical object Samwab holds, sells or has checked, with its materials, its custody status (where it is) and its verification status (is it authentic). Staff register pieces in the admin site. |
+| `pieces` | Pieces: one row per physical object Samwab holds, sells or has checked, with its materials, its photos, its custody status (where it is) and its verification status (is it authentic). Staff register pieces in the admin site. |
 | `core` | Shared building blocks: IDs, `BaseModel`, `Money`, policy values, errors, paging, request IDs, the API description and the health endpoint. |
 
 ## Shared building blocks
@@ -679,6 +693,12 @@ listings add it).
   that a piece uses can no longer be deleted.
 - `serial_or_date_code` is for staff only and will never be shown to the public.
 - Pieces are never deleted.
+- **Photos** are added in the Photos list on the piece page (JPEG, PNG or WebP, up
+  to 20 MB). Each one is checked and cleaned before it is saved: it is turned
+  upright, its hidden data (where and when it was taken, the camera) is removed,
+  and it is stored under a new name in `pieces/<piece id>/`. A saved photo's
+  picture is never replaced: delete it and add a new one. Its kind and order can
+  change. New photos go last. A piece with photos cannot be deleted.
 
 Two statuses, shown in the admin but never edited there:
 
@@ -871,13 +891,13 @@ Branches). Render builds and starts the new version a few minutes later.
 | `DJANGO_FRONTEND_URL` | The web app's address, when it has one |
 
 Render sets `RENDER_EXTERNAL_HOSTNAME` itself (for example
-`samwab-luxury-backend.onrender.com`); the app accepts that address and trusts it
+`samwab-luxury-backnd.onrender.com`); the app accepts that address and trusts it
 for forms. Add a custom domain with `DJANGO_ALLOWED_HOSTS` and
 `DJANGO_CSRF_TRUSTED_ORIGINS`.
 
 **After the first deploy:**
 
-- Check https://samwab-luxury-backend.onrender.com/api/v1/health/ answers `{"status": "ok"}`.
+- Check https://samwab-luxury-backnd.onrender.com/api/v1/health/ answers `{"status": "ok"}`.
 - Make your admin login: Render's **Shell** tab is not on the free plan, so run it
   from your machine once, against Neon's **direct** string (never commit it):
   ```bash
@@ -894,8 +914,12 @@ Gunicorn with the production settings and loads the health check, the admin
 login page and the admin's CSS.
 
 Free Render instances sleep after a while without visitors; the first request
-afterwards takes longer. Uploaded files are not kept between deploys, so piece
-photos will need a cloud bucket (S3 or R2) before they are used on the live site.
+afterwards takes longer.
+
+**Photos on the live site: not yet.** Render's disk is wiped on every deploy and
+the live site does not serve the `media/` folder, so photos uploaded there now
+would be lost. Upload photos on your machine only until a cloud bucket (S3 or
+Cloudflare R2) is chosen and set up (a later build).
 
 ## Settings and environment variables
 
@@ -924,7 +948,7 @@ On your own machine, only `DJANGO_SECRET_KEY` is needed.
 The README is updated in every build.
 
 
-Last build: 01a, CI fix for the deploy rehearsal (after 01, production deploy).
+Last build: E1, photos for pieces (the first e-commerce build).
 
 ## Build history
 
@@ -946,6 +970,8 @@ One line per build, newest last. Each build is one feature, merged into `dev`.
 | 08a | 22 Nov 2026 | Tidy-up: code on GitHub (`dev` default, `main` for deploys); CI also runs every test on PostgreSQL 18; tests use `DATABASE_URL` when set; build scripts end with `git push` |
 | 01 | 22 Nov 2026 | Production deploy: Neon PostgreSQL from `DATABASE_URL` (Neon's Django settings), Render's address allowed automatically, WhiteNoise for static files, `.python-version`, emails to the logs until an email service exists; CI rehearses Render's build and start |
 | 01a | 22 Nov 2026 | CI fix: the deploy rehearsal tells production settings that the throwaway CI database is unencrypted (`sslmode=disable`, CI only) |
+| E1 | 23 Nov 2026 | Photos for pieces: the `media` table; uploads in the piece's admin page, checked and cleaned with Pillow (upright, hidden location data removed, new file name, JPEG/PNG/WebP only, 20 MB limit); audited; `intake_staff` may manage photos; `pieces.models` split into one file per subject |
 
 Builds run in the order the roadmap sets, so numbers can skip: builds 12 to 14 came
 before 06 to 11 to start on what buyers see, then 07, 08, the 08a tidy-up and build 01 (production deploy).
+E builds (E1, E2, ...) are the e-commerce builds for the client demo.

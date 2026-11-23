@@ -7,12 +7,17 @@ them: custody events (16), the ledger (17) and authentication checks (28).
 Every write records an audit event in the same transaction (build 07).
 """
 
+from django.core.files.base import ContentFile
+from django.core.files.storage import default_storage
 from django.db import transaction
+from django.db.models import Max
 
 from apps.accounts.models import User
 from apps.audit import services as audit
+from apps.core.ids import new_uuid
 from apps.core.state_machine import StateMachine
-from apps.pieces.models import Piece
+from apps.pieces.models import Media, Piece
+from apps.pieces.photos import PreparedPhoto
 from apps.pieces.state import CUSTODY, VERIFICATION
 
 # A form never changes these; only the state machine does.
@@ -81,3 +86,57 @@ def move_custody(piece: Piece, *, to: str, by: User) -> Piece:
 def set_verification(piece: Piece, *, to: str, by: User) -> Piece:
     """Record the result of a piece's authentication: ``verified`` or ``not_authentic``."""
     return _move(piece, "verification_status", VERIFICATION, to, verb="verification_set", by=by)
+
+
+# ---------- photos ----------
+
+
+def add_photo(piece: Piece, photo: PreparedPhoto, *, kind: str, by: User) -> Media:
+    """Keep a checked photo (from ``photos.prepare``) as the piece's last photo.
+
+    The file is stored under a new random name (the uploader's file name is never
+    kept). If saving its row fails, the file is removed again. If an outer
+    transaction is cancelled later, the file may stay behind unused: a missing
+    file would break a page, an extra one breaks nothing.
+    """
+    name = default_storage.save(
+        f"pieces/{piece.pk}/{new_uuid()}.{photo.extension}", ContentFile(photo.content)
+    )
+    try:
+        with transaction.atomic():
+            last = piece.photos.aggregate(last=Max("sort_order"))["last"] or 0
+            media = Media.objects.create(
+                piece=piece,
+                kind=kind,
+                file=name,
+                sha256=photo.sha256,
+                width=photo.width,
+                height=photo.height,
+                sort_order=last + 1,
+            )
+            audit.record_saved(media, before=None, by=by)
+    except BaseException:
+        default_storage.delete(name)
+        raise
+    return media
+
+
+@transaction.atomic
+def update_photo(media: Media, *, kind: str, sort_order: int, by: User) -> Media:
+    """Change a photo's kind or place. The file itself never changes."""
+    before = audit.snapshot(Media.objects.get(pk=media.pk))
+    media.kind = kind
+    media.sort_order = sort_order
+    media.full_clean()
+    media.save(update_fields=["kind", "sort_order", "updated_at"])
+    audit.record_saved(media, before=before, by=by)
+    return media
+
+
+@transaction.atomic
+def delete_photo(media: Media, *, by: User) -> None:
+    """Delete a photo. Its file is removed only once the deletion is saved."""
+    before, media_id, name = audit.snapshot(media), media.pk, media.stored_name
+    media.delete()
+    audit.record_deleted(Media, media_id, before=before, by=by)
+    transaction.on_commit(lambda: default_storage.delete(name))

@@ -48,3 +48,9 @@ class CustodyStatus(models.TextChoices):
     AT_INTAKE = "at_intake", "At intake"
     IN_VAULT = "in_vault", "In the vault"
     WITH_BUYER = "with_buyer", "With the buyer"
+
+
+class MediaKind(models.TextChoices):
+    LISTING = "listing", "Listing photo"
+    CONDITION = "condition", "Condition photo"
+    FLAW = "flaw", "Flaw close-up"
