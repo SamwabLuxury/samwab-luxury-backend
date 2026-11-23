@@ -2,7 +2,7 @@
 
 from copy import deepcopy
 
-from apps.core.encryption import LOCAL_ONLY_ENCRYPTION_KEY
+from apps.platform.core.encryption import LOCAL_ONLY_ENCRYPTION_KEY
 
 from .base import *
 from .base import LOGGING as BASE_LOGGING

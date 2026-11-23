@@ -22,6 +22,6 @@ def _uploads_in_a_temporary_folder(settings: Any, tmp_path: Path) -> None:
 @pytest.fixture(autouse=True)
 def _empty_fake_payment_provider() -> None:
     """Every test starts with no payments at the fake provider."""
-    from apps.payments.providers import fake_provider
+    from apps.money.payments.providers import fake_provider
 
     fake_provider().reset()

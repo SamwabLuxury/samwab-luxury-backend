@@ -18,11 +18,11 @@ environ.Env.read_env(BASE_DIR / ".env")
 
 SECRET_KEY = env("DJANGO_SECRET_KEY")
 
-# Keys for encrypted columns such as addresses (apps/core/encryption.py), comma-separated.
+# Keys for encrypted columns such as addresses (apps/platform/core/encryption.py), comma-separated.
 # The first key encrypts; every key decrypts. Separate from SECRET_KEY on purpose.
 FIELD_ENCRYPTION_KEYS = env.list("DJANGO_FIELD_ENCRYPTION_KEYS", default=[])
 
-# Payments (apps/payments). "stripe", or "fake" in tests. Keys from the Stripe
+# Payments (apps/money/payments). "stripe", or "fake" in tests. Keys from the Stripe
 # dashboard: the secret key (sk_test_ in the sandbox) and the webhook signing
 # secret (whsec_). Never in Git.
 PAYMENT_PROVIDER = env("DJANGO_PAYMENT_PROVIDER", default="stripe")
@@ -43,28 +43,28 @@ THIRD_PARTY_APPS = [
     "rest_framework",
     "drf_spectacular",
     "allauth",
-    "apps.accounts.allauth_config.EmailAddressesConfig",  # allauth.account, renamed
+    "apps.users.accounts.allauth_config.EmailAddressesConfig",  # allauth.account, renamed
     "allauth.headless",
 ]
 LOCAL_APPS = [
-    "apps.core",
-    "apps.accounts",
-    "apps.audit",
-    "apps.idempotency",
-    "apps.catalog",
-    "apps.pieces",
-    "apps.listings",
-    "apps.addresses",
-    "apps.payments",
-    "apps.orders",
+    "apps.platform.core",
+    "apps.users.accounts",
+    "apps.platform.audit",
+    "apps.platform.idempotency",
+    "apps.inventory.catalog",
+    "apps.inventory.pieces",
+    "apps.shop.listings",
+    "apps.users.addresses",
+    "apps.money.payments",
+    "apps.shop.orders",
 ]
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 
 MIDDLEWARE = [
     # First in the list, so the request ID exists before anything else runs.
-    "apps.core.request_id.RequestIdMiddleware",
+    "apps.platform.core.request_id.RequestIdMiddleware",
     # The caller's IP address, for the audit log.
-    "apps.core.client_ip.ClientIpMiddleware",
+    "apps.platform.core.client_ip.ClientIpMiddleware",
     "django.middleware.security.SecurityMiddleware",
     # Serves the admin's CSS and JavaScript on the live site (WhiteNoise docs: right here).
     "whitenoise.middleware.WhiteNoiseMiddleware",
@@ -105,7 +105,7 @@ DATABASES = {
     }
 }
 
-# Our own user model: people log in with their email. See apps/accounts/models.py.
+# Our own user model: people log in with their email. See apps/users/accounts/models.py.
 AUTH_USER_MODEL = "accounts.User"
 
 AUTHENTICATION_BACKENDS = [
@@ -125,7 +125,7 @@ PASSWORD_HASHERS = [
 ]
 
 # A CSRF failure on an API path answers in the API's error format.
-CSRF_FAILURE_VIEW = "apps.core.api.errors.csrf_failure"
+CSRF_FAILURE_VIEW = "apps.platform.core.api.errors.csrf_failure"
 
 # ---------- Sign-up and login (django-allauth, headless) ----------
 # The web app calls allauth's JSON API under /_allauth/browser/v1/. allauth
@@ -134,8 +134,8 @@ HEADLESS_ONLY = True
 HEADLESS_CLIENTS = ("browser",)
 HEADLESS_SERVE_SPECIFICATION = True  # allauth's own API description at /_allauth/openapi.html
 
-ACCOUNT_ADAPTER = "apps.accounts.adapter.AccountAdapter"
-ACCOUNT_SIGNUP_FORM_CLASS = "apps.accounts.forms.SignupForm"
+ACCOUNT_ADAPTER = "apps.users.accounts.adapter.AccountAdapter"
+ACCOUNT_SIGNUP_FORM_CLASS = "apps.users.accounts.forms.SignupForm"
 ACCOUNT_USER_MODEL_USERNAME_FIELD = None
 ACCOUNT_LOGIN_METHODS = {"email"}
 ACCOUNT_SIGNUP_FIELDS = ["email*", "password1*"]
@@ -208,10 +208,10 @@ REST_FRAMEWORK: dict[str, Any] = {
     "DEFAULT_PARSER_CLASSES": ["rest_framework.parsers.JSONParser"],
     "DEFAULT_AUTHENTICATION_CLASSES": ["rest_framework.authentication.SessionAuthentication"],
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
-    # Every error uses one format. See apps/core/api/errors.py.
-    "EXCEPTION_HANDLER": "apps.core.api.errors.exception_handler",
-    # Every list is paged the same way. See apps/core/api/pagination.py.
-    "DEFAULT_PAGINATION_CLASS": "apps.core.api.pagination.CursorPagination",
+    # Every error uses one format. See apps/platform/core/api/errors.py.
+    "EXCEPTION_HANDLER": "apps.platform.core.api.errors.exception_handler",
+    # Every list is paged the same way. See apps/platform/core/api/pagination.py.
+    "DEFAULT_PAGINATION_CLASS": "apps.platform.core.api.pagination.CursorPagination",
     # Builds the OpenAPI file from the code.
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "TEST_REQUEST_DEFAULT_FORMAT": "json",
@@ -224,8 +224,8 @@ SPECTACULAR_SETTINGS: dict[str, Any] = {
     "SCHEMA_PATH_PREFIX": "/api/v1",
     # Several models have a "status"; give each list of statuses its own name.
     "ENUM_NAME_OVERRIDES": {
-        "OrderStatusEnum": "apps.orders.enums.OrderStatus",
-        "ListingStatusEnum": "apps.listings.enums.ListingStatus",
+        "OrderStatusEnum": "apps.shop.orders.enums.OrderStatus",
+        "ListingStatusEnum": "apps.shop.listings.enums.ListingStatus",
     },
     "SERVE_INCLUDE_SCHEMA": False,
     # Anyone can read the API description for now. Reviewed in the security build.
@@ -237,10 +237,10 @@ LOGGING: dict[str, Any] = {
     "version": 1,
     "disable_existing_loggers": False,
     "filters": {
-        "request_id": {"()": "apps.core.logs.RequestIdFilter"},
+        "request_id": {"()": "apps.platform.core.logs.RequestIdFilter"},
     },
     "formatters": {
-        "json": {"()": "apps.core.logs.JsonFormatter"},
+        "json": {"()": "apps.platform.core.logs.JsonFormatter"},
         "plain": {
             "format": "{levelname} {name} [{request_id}] {message}",
             "style": "{",
