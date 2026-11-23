@@ -204,6 +204,22 @@ Log in to the admin site as a superuser (only admins list pieces for now).
    only. Add them to `intake_staff` instead and they see pieces, with the catalog
    read only.
 
+### Add a delivery address
+
+Log in at http://127.0.0.1:8000/admin/ first (the API uses the same login), then
+open http://127.0.0.1:8000/api/v1/me/addresses/. At the bottom of the page, send:
+
+```json
+{"recipient_name": "Adaeze Obi", "line1": "12 Admiralty Way", "city": "Lagos", "country": "NG"}
+```
+
+The answer has `"is_default": true` (your first address). In the database the name
+and street are unreadable; only the city is plain:
+
+```bash
+python manage.py shell -c "from django.db import connection; c = connection.cursor(); c.execute('SELECT recipient_name_enc, line1_enc, city FROM addresses'); print(c.fetchall())"
+```
+
 ### Sign up and log in from the command line
 
 The web app does exactly this. Run it in a second terminal while `runserver` is
@@ -472,6 +488,10 @@ the branch and the database file. The full log is saved in `~/samwab-build-logs/
 | `This piece already has an open listing.` | The piece has a draft or live listing | Open that listing and change its price, or withdraw it first |
 | `Consigned pieces are listed by their owners` | Staff can list house stock only for now | Choose a house stock piece |
 | A listing is not in `GET /api/v1/listings/` | It is a draft or withdrawn, or its piece was found not authentic | Publish it (admin action); check the piece's verification status |
+| `ImproperlyConfigured: Set DJANGO_FIELD_ENCRYPTION_KEYS` (Render deploy) | The live site has no encryption key, or has the local-only one | Add `DJANGO_FIELD_ENCRYPTION_KEYS` in Render (see Deploying), then deploy again |
+| `core.E001 ... is not a valid Fernet key` | The key was mistyped, or made some other way | Make one with the Fernet command in "Encrypted columns" |
+| `EncryptionKeyError: A stored value cannot be decrypted` | The key that wrote the data is no longer in `DJANGO_FIELD_ENCRYPTION_KEYS` | Put the old key back (after the new one), run `reencrypt_fields`, then remove it |
+| `FieldError: 'line1' is encrypted, so it cannot be filtered` | A query filters on an encrypted column | Filter on a plain column (city, country) instead |
 | A test fails only on your machine | Usually an old database or old packages | Re-install packages (step 4); tests never use `db.sqlite3`, so check for local changes with `git status` |
 
 ## Project structure
@@ -486,6 +506,7 @@ apps/                 our code, one folder per business area
   catalog/            brands, categories, designs, materials, capture protocols and
                       comparable sales; the catalog manager
     models/           one file per subject; import models from apps.catalog.models
+  addresses/          delivery addresses, with the name, street and phone encrypted
   listings/           listings: a piece for sale, its price history and the public browse API
     state.py          the allowed listing status moves
   pieces/             pieces: one row per physical object, its materials, photos and two statuses
@@ -542,6 +563,7 @@ Other files at the top of the repository:
 | `idempotency` | The `Idempotency-Key` header (`idempotency_keys`): a create request sent twice does its work once, and the retry gets the first answer. Views use it with `@idempotent`. |
 | `audit` | The audit log (`audit_events`): who changed what, when and from where. Rows are only ever added. Other apps write to it from their services. |
 | `catalog` | What can be sold: brands, categories, named designs (such as the Kelly 28) and materials; the capture protocols staff follow for each category or design; comparable sales for fair prices. Staff run it in the admin site; the API only reads it. |
+| `addresses` | Delivery addresses a person keeps on their account. The name, street lines and phone are encrypted in the database. |
 | `listings` | Listings: a piece offered for sale at an asking price, with its price history. Staff list house stock in the admin site; buyers browse live listings through the public API. |
 | `pieces` | Pieces: one row per physical object Samwab holds, sells or has checked, with its materials, its photos, its custody status (where it is) and its verification status (is it authentic). Staff register pieces in the admin site. |
 | `core` | Shared building blocks: IDs, `BaseModel`, `Money`, policy values, errors, paging, request IDs, the API description and the health endpoint. |
@@ -557,6 +579,7 @@ Every app uses these, so learn them first. They live in `apps/core`.
 | An amount of money | `from apps.core.money import Money` | Money is whole cents plus a currency. Never use floats or decimals. |
 | A time limit or default rate | `from apps.core import policy` | Read the value from `policy`. Never type the number into your own code. |
 | A business rule that says no | `from apps.core.exceptions import AppError` | Services raise `AppError` (or `NotFoundError`, `PermissionDeniedError`, `ConflictError`). They never build an HTTP response. |
+| A secret column (an address, a phone number) | `from apps.core.fields import EncryptedTextField` | Name its column `<name>_enc` (`db_column`). It is encrypted in the database and read back as plain text; it cannot be filtered or sorted on (only `__isnull`). Keys: `DJANGO_FIELD_ENCRYPTION_KEYS` (see "Encrypted columns"). |
 | A status that changes | `from apps.core.state_machine import StateMachine` | One table of allowed moves per status, next to its model (see `apps/pieces/state.py`). Services call `MACHINE.check(current, target)` before changing it; a refused move is 409 `illegal_transition`. |
 | Rules for flexible JSON data | `from apps.core.json_schema import attribute_errors, schema_errors` | Categories and designs describe piece attributes as JSON Schema (draft 2020-12). `schema_errors` checks a schema; `attribute_errors` lists every problem in some data, with where it is. |
 | A list in another order | `from apps.core.api.pagination import ordered_by` | `pagination_class = ordered_by("slug")`. The first field must be unique per row (see Lists and paging). |
@@ -586,6 +609,8 @@ fail at once and never reach the database.
 | `GET /api/v1/brands/` | Active brands, A to Z | No |
 | `GET /api/v1/categories/` | Active categories in menu order | No |
 | `GET /api/v1/product-models/` | Active named designs. Filters: `?brand=<slug>&category=<slug>` | No |
+| `GET /api/v1/me/addresses/` | My delivery addresses, newest first | Yes |
+| `POST /api/v1/me/addresses/` | Add a delivery address | Yes |
 | `GET /api/v1/listings/` | Live listings, newest first. Filters: `q`, `brand`, `category`, `condition_min`, `price_max` | No |
 | `GET /api/v1/listings/{id}/` | One live listing | No |
 | `GET /api/v1/docs/` | A page to browse and try every endpoint | No |
@@ -740,6 +765,46 @@ from the database first, so two people acting at once cannot skip a step. Custod
 events (build 16), the ownership ledger (build 17) and authentication checks
 (build 28) will call them. Returns and moves between vaults add their moves when
 their rules are settled.
+
+### Addresses
+
+A person's own delivery addresses. Login is required; each person sees only their own.
+
+- `GET /api/v1/me/addresses/`: newest first, paged with `cursor`.
+- `POST /api/v1/me/addresses/`: `recipient_name` (up to 160 characters), `line1`
+  (200) and `city` are required, with `country` (two letters; `ng` becomes `NG`).
+  Optional: `label` (such as Home, 40), `line2` (200), `region`, `postal_code`,
+  `phone` (digits, spaces and `+ ( ) -`), `is_default`. Answers 201 with the address.
+  An empty `line2` or `phone` comes back as `null`.
+- The first address becomes the default. Sending `"is_default": true` makes the new
+  one the default and the old one not; each person has at most one (the database
+  enforces it).
+- At most 20 addresses per account: the 21st is 422 `address_limit_reached`.
+- Bad fields are 400 `validation_error` naming each field.
+
+Changing and deleting addresses are not in the contract yet.
+
+### Encrypted columns
+
+The recipient's name, the street lines and the phone are stored encrypted
+(columns ending `_enc`, decision D5); city, region, postal code and country stay
+plain, because delivery and tax rules read them. In code they read as plain text.
+They never appear in the audit log, and `str(address)` shows only the label and city.
+
+- Encryption is Fernet from the `cryptography` package, with keys in
+  `DJANGO_FIELD_ENCRYPTION_KEYS` (comma separated), separate from `SECRET_KEY`.
+  The **first** key encrypts; **every** key decrypts.
+- Make a key:
+  `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`
+- On your machine no key is needed: without one, a public local-only key is used.
+  Production refuses to start without its own key, or with the local one.
+- **Losing every key loses the addresses.** Keep the live key in a password manager
+  as well as in Render.
+- **To change keys:** put the new key first (`new,old`), deploy, run
+  `python manage.py reencrypt_fields` (Render's Shell), then remove the old key.
+- `manage.py check` reports a missing or malformed key as `core.E001`.
+- Encrypted columns cannot be filtered, searched or sorted on; Django raises
+  `FieldError`. Only `__isnull` works.
 
 ### Listings
 
@@ -966,6 +1031,7 @@ Branches). Render builds and starts the new version a few minutes later.
 |---|---|
 | `DJANGO_SETTINGS_MODULE` | `configurations.settings.production` |
 | `DJANGO_SECRET_KEY` | Press **Generate** |
+| `DJANGO_FIELD_ENCRYPTION_KEYS` | A key from `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`, run on your machine. Also keep it in a password manager: without it the addresses cannot be read. Never use Render's **Generate** here (it is not a Fernet key) |
 | `DATABASE_URL` | Neon's **pooled** connection string (the host contains `-pooler`): the running app uses it |
 | `DIRECT_DATABASE_URL` | Neon's **direct** connection string (no `-pooler`): only migrations use it |
 | `WEB_CONCURRENCY` | `2` (Gunicorn's number of workers) |
@@ -1012,6 +1078,7 @@ Servers use `configurations.settings.production` (or `staging`).
 | Variable | Needed in | Meaning |
 |---|---|---|
 | `DJANGO_SECRET_KEY` | everywhere | Long random text used for signing |
+| `DJANGO_FIELD_ENCRYPTION_KEYS` | staging, production (optional locally) | Keys for encrypted columns, comma separated; the first encrypts. See "Encrypted columns" |
 | `DATABASE_URL` | staging, production; optional in tests | The database. Production: Neon's pooled string. Tests: set it to run on PostgreSQL |
 | `DIRECT_DATABASE_URL` | Render's build command | Neon's direct string, used only by `migrate` |
 | `DJANGO_ALLOWED_HOSTS` | optional | Extra host names the API answers to, comma separated (Render's own is added automatically) |
@@ -1030,7 +1097,7 @@ On your own machine, only `DJANGO_SECRET_KEY` is needed.
 The README is updated in every build.
 
 
-Last build: E2, listings and the browse API.
+Last build: E3, delivery addresses (encrypted).
 
 ## Build history
 
@@ -1054,6 +1121,7 @@ One line per build, newest last. Each build is one feature, merged into `dev`.
 | 01a | 22 Nov 2026 | CI fix: the deploy rehearsal tells production settings that the throwaway CI database is unencrypted (`sslmode=disable`, CI only) |
 | E1 | 23 Nov 2026 | Photos for pieces: the `media` table; uploads in the piece's admin page, checked and cleaned with Pillow (upright, hidden location data removed, new file name, JPEG/PNG/WebP only, 20 MB limit); audited; `intake_staff` may manage photos; `pieces.models` split into one file per subject |
 | E2 | 23 Nov 2026 | Listings: `listings` and `listing_price_changes` for house stock; draft, publish (refused until the piece has a listing photo and is in the vault), change the price and withdraw in the admin site, all audited; public `GET /api/v1/listings/` (filters `q`, `brand`, `category`, `condition_min`, `price_max`) and `GET /api/v1/listings/{id}/` |
+| E3 | 23 Nov 2026 | Addresses: `addresses` with the name, street lines and phone encrypted (`EncryptedTextField`, Fernet keys in `DJANGO_FIELD_ENCRYPTION_KEYS`, start-up check `core.E001`, `reencrypt_fields` command); `GET`/`POST /api/v1/me/addresses/` with one default per person and at most 20 |
 
 Builds run in the order the roadmap sets, so numbers can skip: builds 12 to 14 came
 before 06 to 11 to start on what buyers see, then 07, 08, the 08a tidy-up and build 01 (production deploy).

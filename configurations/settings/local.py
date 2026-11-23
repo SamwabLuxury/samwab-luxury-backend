@@ -2,11 +2,17 @@
 
 from copy import deepcopy
 
+from apps.core.encryption import LOCAL_ONLY_ENCRYPTION_KEY
+
 from .base import *
 from .base import LOGGING as BASE_LOGGING
 from .base import REST_FRAMEWORK as BASE_REST_FRAMEWORK
 
 DEBUG = True
+
+# Without a key in .env, your machine uses a public one that protects nothing.
+# Production refuses to start with it.
+FIELD_ENCRYPTION_KEYS = FIELD_ENCRYPTION_KEYS or [LOCAL_ONLY_ENCRYPTION_KEY]
 ALLOWED_HOSTS = ["localhost", "127.0.0.1"]
 
 # Emails (such as sign-up codes) are printed in the terminal instead of sent.

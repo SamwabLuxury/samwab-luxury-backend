@@ -17,6 +17,10 @@ env = environ.Env()
 environ.Env.read_env(BASE_DIR / ".env")
 
 SECRET_KEY = env("DJANGO_SECRET_KEY")
+
+# Keys for encrypted columns such as addresses (apps/core/encryption.py), comma-separated.
+# The first key encrypts; every key decrypts. Separate from SECRET_KEY on purpose.
+FIELD_ENCRYPTION_KEYS = env.list("DJANGO_FIELD_ENCRYPTION_KEYS", default=[])
 DEBUG = False
 ALLOWED_HOSTS: list[str] = []
 
@@ -43,6 +47,7 @@ LOCAL_APPS = [
     "apps.catalog",
     "apps.pieces",
     "apps.listings",
+    "apps.addresses",
 ]
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 

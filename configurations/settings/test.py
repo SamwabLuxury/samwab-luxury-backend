@@ -4,6 +4,9 @@ import os
 
 # Tests must not depend on a developer's .env file.
 os.environ.setdefault("DJANGO_SECRET_KEY", "test-only-key-never-used-outside-tests")
+os.environ.setdefault(
+    "DJANGO_FIELD_ENCRYPTION_KEYS", "i_UVkyyO7uKcC3RJ1QVaTgS3GFtCyix6-8zBMYWbADI="
+)
 
 from .base import *
 from .base import env

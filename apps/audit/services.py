@@ -60,7 +60,9 @@ def snapshot(
     values: Snapshot = {
         field.attname: _value(field, instance)
         for field in instance._meta.concrete_fields
-        if is_recorded_field(field.attname) and field.name not in skipped
+        if is_recorded_field(field.attname)
+        and not (field.column or "").endswith("_enc")  # encrypted columns, whatever their name
+        and field.name not in skipped
     }
     for name in many:
         values[name] = sorted(str(row) for row in getattr(instance, name).all())
