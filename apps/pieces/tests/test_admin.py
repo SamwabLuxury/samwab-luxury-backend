@@ -48,6 +48,8 @@ def form(**fields: str) -> dict[str, str]:
         "acquisition_cost_minor": "900000",
         "condition_grade": "excellent",
         "current_owner": str(make_house().id),
+        "photos-TOTAL_FORMS": "0",  # the photos section, empty
+        "photos-INITIAL_FORMS": "0",
         "piecematerial_set-TOTAL_FORMS": "1",
         "piecematerial_set-INITIAL_FORMS": "0",
         "piecematerial_set-0-material": str(togo.id),

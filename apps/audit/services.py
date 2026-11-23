@@ -42,6 +42,13 @@ def _plain(value: Any) -> Any:
     return json.loads(json.dumps(value, cls=DjangoJSONEncoder))
 
 
+def _value(field: models.Field, instance: models.Model) -> Any:  # type: ignore[type-arg]
+    value = field.value_from_object(instance)
+    if isinstance(field, models.FileField):
+        return value.name or None  # a stored file is recorded by its name in the storage
+    return _plain(value)
+
+
 def snapshot(
     instance: models.Model, *, exclude: Iterable[str] = (), many: Iterable[str] = ()
 ) -> Snapshot:
@@ -51,7 +58,7 @@ def snapshot(
     """
     skipped = set(exclude)
     values: Snapshot = {
-        field.attname: _plain(field.value_from_object(instance))
+        field.attname: _value(field, instance)
         for field in instance._meta.concrete_fields
         if is_recorded_field(field.attname) and field.name not in skipped
     }

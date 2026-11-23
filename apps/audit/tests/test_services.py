@@ -43,6 +43,15 @@ def test_a_snapshot_shows_related_rows_by_id_and_dates_as_text() -> None:
     assert shot["price_minor"] == 1_000
 
 
+def test_a_snapshot_records_a_stored_file_by_its_name() -> None:
+    from apps.pieces.models import Media
+
+    media = Media(file="pieces/abc/photo.jpg", kind="listing", sha256="0" * 64, width=1, height=1)
+
+    assert services.snapshot(media)["file"] == "pieces/abc/photo.jpg"
+    assert services.snapshot(Media(kind="flaw"))["file"] is None
+
+
 def test_a_snapshot_can_leave_fields_out() -> None:
     hermes = make_brand("Hermès")
 
