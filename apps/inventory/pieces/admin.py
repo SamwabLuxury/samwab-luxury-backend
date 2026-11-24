@@ -11,7 +11,7 @@ message on the form; saving goes through ``services.add_photo``, ``update_photo`
 and ``delete_photo``.
 """
 
-from typing import Any
+from typing import Any, ClassVar
 
 from django import forms
 from django.contrib import admin, messages
@@ -39,7 +39,15 @@ class PhotoForm(forms.ModelForm):  # type: ignore[type-arg]
 
     class Meta:
         model = Media
-        fields = ("kind", "sort_order")
+        fields = ("kind", "sort_order", "label", "caption")
+        labels: ClassVar[dict[str, str]] = {
+            "label": "name (optional)",
+            "caption": "note (optional)",
+        }
+        widgets: ClassVar[dict[str, forms.Widget]] = {
+            "label": forms.TextInput(attrs={"size": 14, "placeholder": "Stamp"}),
+            "caption": forms.Textarea(attrs={"rows": 2, "cols": 32}),
+        }
 
     def clean(self) -> dict[str, Any]:
         data: dict[str, Any] = super().clean() or {}
@@ -61,7 +69,7 @@ class PhotoInline(admin.TabularInline):  # type: ignore[type-arg]
     model = Media
     form = PhotoForm
     extra = 1
-    fields = ("preview", "upload", "kind", "sort_order")
+    fields = ("preview", "upload", "kind", "sort_order", "label", "caption")
     readonly_fields = ("preview",)
     verbose_name = "photo"
     verbose_name_plural = "photos (JPEG, PNG or WebP; location data is removed)"
@@ -161,6 +169,8 @@ class PieceAdmin(admin.ModelAdmin):  # type: ignore[type-arg]
                     photo_form.instance,
                     kind=data["kind"],
                     sort_order=photo_form.initial["sort_order"] if order is None else order,
+                    label=data.get("label", ""),
+                    caption=data.get("caption", ""),
                     by=staff,
                 )
                 formset.changed_objects.append((photo_form.instance, photo_form.changed_data))
@@ -171,6 +181,8 @@ class PieceAdmin(admin.ModelAdmin):  # type: ignore[type-arg]
                         form.instance,
                         photo_form.prepared,
                         kind=photo_form.cleaned_data["kind"],
+                        label=photo_form.cleaned_data.get("label", ""),
+                        caption=photo_form.cleaned_data.get("caption", ""),
                         by=staff,
                     )
                 except PhotoStorageError:

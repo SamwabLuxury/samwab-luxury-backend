@@ -107,7 +107,12 @@ def test_the_database_holds_only_ciphertext() -> None:
         )
         name, line1, phone, city = cursor.fetchone()
 
-    assert "Adaeze" not in name and "Admiralty" not in line1 and "803" not in phone
+    # Whole values: they hold spaces and "+", which a Fernet token never contains.
+    # (Checking a fragment such as "803" failed by chance about 1 run in 2,500, because
+    # tokens are random letters and digits; found in build E7.)
+    assert "Adaeze Obi" not in name and "12 Admiralty Way" not in line1
+    assert "+234 803 000 0000" not in phone
+    assert all(column.startswith("gAAAAA") for column in (name, line1, phone))  # Fernet tokens
     assert city == "Lagos"  # city, region, postal code and country stay searchable
     address.refresh_from_db()
     assert (address.recipient_name, address.line1, address.phone) == (
