@@ -91,7 +91,15 @@ def set_verification(piece: Piece, *, to: str, by: User) -> Piece:
 # ---------- photos ----------
 
 
-def add_photo(piece: Piece, photo: PreparedPhoto, *, kind: str, by: User) -> Media:
+def add_photo(
+    piece: Piece,
+    photo: PreparedPhoto,
+    *,
+    kind: str,
+    by: User,
+    label: str = "",
+    caption: str = "",
+) -> Media:
     """Keep a checked photo (from ``photos.prepare``) as the piece's last photo.
 
     The file is stored under a new random name (the uploader's file name is never
@@ -105,7 +113,7 @@ def add_photo(piece: Piece, photo: PreparedPhoto, *, kind: str, by: User) -> Med
     try:
         with transaction.atomic():
             last = piece.photos.aggregate(last=Max("sort_order"))["last"] or 0
-            media = Media.objects.create(
+            media = Media(
                 piece=piece,
                 kind=kind,
                 file=name,
@@ -113,7 +121,11 @@ def add_photo(piece: Piece, photo: PreparedPhoto, *, kind: str, by: User) -> Med
                 width=photo.width,
                 height=photo.height,
                 sort_order=last + 1,
+                label=label.strip(),
+                caption=caption.strip(),
             )
+            media.full_clean()
+            media.save()
             audit.record_saved(media, before=None, by=by)
     except BaseException:
         default_storage.delete(name)
@@ -122,13 +134,28 @@ def add_photo(piece: Piece, photo: PreparedPhoto, *, kind: str, by: User) -> Med
 
 
 @transaction.atomic
-def update_photo(media: Media, *, kind: str, sort_order: int, by: User) -> Media:
-    """Change a photo's kind or place. The file itself never changes."""
+def update_photo(
+    media: Media,
+    *,
+    kind: str,
+    sort_order: int,
+    by: User,
+    label: str | None = None,
+    caption: str | None = None,
+) -> Media:
+    """Change a photo's kind, place, name or note. The file itself never changes.
+
+    A name or note left out (None) stays as it is.
+    """
     before = audit.snapshot(Media.objects.get(pk=media.pk))
     media.kind = kind
     media.sort_order = sort_order
+    if label is not None:
+        media.label = label.strip()
+    if caption is not None:
+        media.caption = caption.strip()
     media.full_clean()
-    media.save(update_fields=["kind", "sort_order", "updated_at"])
+    media.save(update_fields=["kind", "sort_order", "label", "caption", "updated_at"])
     audit.record_saved(media, before=before, by=by)
     return media
 

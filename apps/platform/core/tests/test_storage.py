@@ -9,7 +9,7 @@ import pytest
 from django.core.files.base import ContentFile
 from django.test import override_settings
 
-from apps.platform.core.storage import CloudinaryStorage, PhotoStorageError
+from apps.platform.core.storage import CloudinaryStorage, PhotoStorageError, photo_links
 
 URL = "cloudinary://123456:not-a-real-secret@samwab-test"
 
@@ -143,3 +143,48 @@ def test_a_failed_delete_becomes_our_error(
 
     with pytest.raises(PhotoStorageError):
         photos.delete("pieces/abc/0001.jpg")
+
+
+# ---------- sized links (E7) ----------
+
+
+def test_a_sized_link_fits_a_box_and_lets_cloudinary_choose_format_and_quality(
+    photos: CloudinaryStorage,
+) -> None:
+    link = photos.sized_url("pieces/abc/0001.jpg", 400)
+
+    # Cloudinary's docs: resize first, then q_auto and f_auto as the last two parts;
+    # `limit` keeps the shape and never makes a small photo bigger.
+    assert link == (
+        "https://res.cloudinary.com/samwab-test/image/upload/"
+        "c_limit,h_400,w_400/q_auto/f_auto/v1/samwab/local/pieces/abc/0001.jpg"
+    )
+
+
+SIZES = {"thumb": 400, "medium": 1200, "zoom": 2400}
+
+
+def test_every_size_from_the_setting_gets_a_link_on_cloudinary(cloud: FakeCloudinary) -> None:
+    with override_settings(
+        CLOUDINARY_URL=URL,
+        PHOTO_FOLDER="samwab/local",
+        PHOTO_SIZES=SIZES,
+        STORAGES={
+            "default": {"BACKEND": "apps.platform.core.storage.CloudinaryStorage"},
+            "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+        },
+    ):
+        links = photo_links("pieces/abc/0001.jpg")
+
+    assert list(links) == ["thumb", "medium", "zoom"]
+    assert "c_limit,h_400,w_400" in links["thumb"]
+    assert "c_limit,h_1200,w_1200" in links["medium"]
+    assert "c_limit,h_2400,w_2400" in links["zoom"]
+    assert cloud.uploads == [] and cloud.destroyed == []  # links cost no call
+
+
+def test_without_cloudinary_every_size_is_the_photo_itself() -> None:
+    with override_settings(PHOTO_SIZES=SIZES):
+        links = photo_links("pieces/abc/0001.jpg")
+
+    assert links == dict.fromkeys(SIZES, "/media/pieces/abc/0001.jpg")

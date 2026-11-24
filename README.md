@@ -172,7 +172,10 @@ On your machine:
 
 1. Open a piece in the admin site (http://127.0.0.1:8000/admin/pieces/piece/).
 2. In **Photos** at the bottom, choose a JPEG, PNG or WebP file, pick its kind
-   (listing photo, condition photo or flaw close-up) and save.
+   (listing photo, condition photo or flaw close-up) and save. Optionally give it a
+   **name** (what it shows, such as `Stamp`, up to 60 characters) and a **note**
+   (one line on what to look for, up to 300). The piece page's "Look closer"
+   viewer shows them; leave them empty and the photo shows without them.
 3. The photo shows as a small preview, stored under a new name with its location
    data removed: on Cloudinary if your `.env` has `CLOUDINARY_URL` (folder
    `samwab/local`), otherwise in the `media/pieces/` folder.
@@ -974,6 +977,16 @@ set; without it (tests, or your machine if you choose) they go to `media/`.
 - `python manage.py check_photo_storage` proves the keys work.
 - Folders: `samwab/local` (your machine) and `samwab/live` (the live site), so test
   uploads never mix with real ones (`DJANGO_PHOTO_FOLDER` to change).
+- **Sizes** (build E7): the API sends every photo as `sizes.thumb`, `sizes.medium`
+  and `sizes.zoom`, smaller copies that fit inside 400, 1,200 and 2,400 pixel
+  squares (`PHOTO_SIZES` in `configurations/settings/base.py`). Each is a link
+  such as `.../image/upload/c_limit,h_400,w_400/q_auto/f_auto/v1/<folder>/...`:
+  `c_limit` shrinks without cropping and never enlarges a small photo; `q_auto` and
+  `f_auto` let Cloudinary pick the quality and the best format for each browser
+  (WebP or AVIF where it can). Cloudinary makes each size the first time it is
+  asked for and then serves it from its CDN; our server never sends image bytes.
+  Without Cloudinary every size is the original file. Front end: use `sizes`, not
+  `url` (the full original), in the shop.
 
 ### Orders
 
@@ -1046,14 +1059,24 @@ with the owner onboarding builds.
   unknown ids are 404.
 
 Each listing has `id`, `piece` (the public view: title, description, brand,
-category, design, size, year, attributes, condition, statuses and `media`, the
-photos in order with a full `url` and `alt` text), `fulfilment`, `ask`
+category, design, size, year, attributes, condition, statuses, `media` and
+`lot_record`), `fulfilment`, `ask`
 (`{"amount": 1250000, "currency": "USD"}`, in cents), `status`, `reservable` and
 `reserved_until` (always `false` and `null` until reservations exist),
 `verification_label` (`verified`, `verification_pending`, or
 `buyer_authenticates` for jewellery the buyer checks), `published_at` and
 `expires_at`. Never returned: serial or date codes, the floor price, costs and the
 owner.
+
+- `media`: the photos in order. Each has `url` (the full original), `sizes`
+  (`thumb`, `medium`, `zoom`: see Photo storage), `kind`, `label` and `caption`
+  (the photo's name and note, `null` when staff gave none), `alt` and `sort_order`.
+- `lot_record`: the piece's facts as `{"label", "value"}` rows, ready to show as
+  they are: Maker, Model, Year, Size, Grade (those it has), then its `attributes`
+  sorted by key. A row is named by the attribute's `title` in the design's or the
+  category's JSON Schema (`"leather": {"type": "string", "title": "Leather · colour"}`),
+  else from the key (`size_cm` → "Size cm"). Lists become `a, b, c`; objects
+  `depth 10, height 22, width 28`; `true` → Yes. Empty values are left out.
 
 A piece found not authentic disappears from browse at once, even if its listing
 is still live.
@@ -1331,7 +1354,7 @@ On your own machine, only `DJANGO_SECRET_KEY` is needed.
 The README is updated in every build.
 
 
-Last build: 06, two-step login.
+Last build: E7, piece page details.
 
 ## Build history
 
@@ -1361,6 +1384,7 @@ One line per build, newest last. Each build is one feature, merged into `dev`.
 | T1 | 23 Nov 2026 | Tidy-up: apps grouped into folders by area (`platform/`, `users/`, `inventory/`, `shop/`, `money/`); app labels, tables, migrations, URLs and the API description unchanged |
 | E6 | 23 Nov 2026 | Photos on Cloudinary: `CloudinaryStorage` (official `cloudinary` 1.47.0) behind Django's storage layer; folders `samwab/local` and `samwab/live`; the live site requires `CLOUDINARY_URL`; `check_photo_storage`; staff see a clear message if storage is down |
 | 06 | 23 Nov 2026 | Two-step login: allauth.mfa (authenticator app codes and 10 recovery codes, app keys encrypted); required for every staff account before any admin page (set-up page with QR code, code page, 5 wrong codes lock it for 15 minutes); allauth's two-step API endpoints; `mfa_enabled` on `GET /api/v1/me/`; `reset_two_step` command; set-up, recovery-code use and reset audited |
+| E7 | 24 Nov 2026 | Piece page details: every photo in the listing API has `sizes` (`thumb`, `medium`, `zoom`: Cloudinary copies within 400, 1,200 and 2,400 px, `q_auto` and `f_auto`); optional photo `label` and `caption` (staff, in the piece's admin page, audited); `lot_record` rows (maker, model, year, size, grade, then attributes named by the schema `title`); a chance-based encryption test made exact |
 
 Builds run in the order the roadmap sets, so numbers can skip: builds 12 to 14 came
 before 06 to 11 to start on what buyers see, then 07, 08, the 08a tidy-up and build 01 (production deploy).
