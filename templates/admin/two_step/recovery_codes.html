@@ -1,0 +1,16 @@
+{% extends "admin/base_site.html" %}
+{# Shown once, right after two-step login is turned on (build 06). #}
+
+{% block content %}
+<div id="content-main">
+  <p>Two-step login is on. If you lose your phone, each of these recovery codes
+  works once instead of the app's code. <strong>This is the only time they are shown.</strong>
+  Save them in your password manager or print them, now.</p>
+  <ul style="font-family: monospace; font-size: 1.2em; list-style: none; padding: 0;">
+    {% for code in codes %}<li class="recovery-code">{{ code }}</li>
+    {% endfor %}
+  </ul>
+  <p>Lost both? Ask the lead engineer to run <code>python manage.py reset_two_step</code> for you.</p>
+  <p><a class="button" href="{{ next_page }}">I have saved them. Continue</a></p>
+</div>
+{% endblock %}

@@ -6,6 +6,8 @@ from django.contrib import admin
 from django.urls import URLPattern, URLResolver, include, path
 
 urlpatterns: list[URLPattern | URLResolver] = [
+    # The admin's second step (two-step login), before the admin so it is found first.
+    path("admin/two-step/", include("apps.users.accounts.two_step_urls")),
     path("admin/", admin.site.urls),
     path("api/v1/", include("apps.platform.core.api.urls")),
     path("api/v1/", include("apps.users.accounts.api.urls")),

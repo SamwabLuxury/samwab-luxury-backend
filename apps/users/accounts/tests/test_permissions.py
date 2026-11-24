@@ -14,7 +14,7 @@ from apps.inventory.pieces.tests.helpers import make_piece
 from apps.users.accounts import roles
 from apps.users.accounts.models import User
 from apps.users.accounts.permissions import sync_role_permissions
-from apps.users.accounts.tests.helpers import make_staff
+from apps.users.accounts.tests.helpers import admin_login, make_staff
 
 pytestmark = pytest.mark.django_db
 
@@ -142,7 +142,7 @@ def test_the_sync_refuses_a_permission_that_does_not_exist() -> None:
 
 
 def test_a_catalog_editor_uses_the_catalog_screens_but_not_pieces(client: Client) -> None:
-    client.force_login(staff_in(roles.CATALOG_EDITOR))
+    admin_login(client, staff_in(roles.CATALOG_EDITOR))
     brand = make_brand()
 
     assert status(client, "/admin/catalog/brand/") == 200
@@ -154,7 +154,7 @@ def test_a_catalog_editor_uses_the_catalog_screens_but_not_pieces(client: Client
 
 
 def test_intake_staff_register_pieces_but_cannot_edit_the_catalog(client: Client) -> None:
-    client.force_login(staff_in(roles.INTAKE_STAFF))
+    admin_login(client, staff_in(roles.INTAKE_STAFF))
     piece = make_piece(product_model=make_product_model())
 
     assert status(client, "/admin/pieces/piece/add/") == 200
@@ -167,7 +167,7 @@ def test_intake_staff_register_pieces_but_cannot_edit_the_catalog(client: Client
 
 
 def test_intake_staff_can_search_the_catalog_while_registering(client: Client) -> None:
-    client.force_login(staff_in(roles.INTAKE_STAFF))
+    admin_login(client, staff_in(roles.INTAKE_STAFF))
     make_brand("Hermès")
 
     response = client.get(
@@ -183,6 +183,6 @@ def test_a_role_alone_does_not_open_the_admin_site(client: Client) -> None:
     clerk = staff_in(roles.CATALOG_EDITOR)
     clerk.is_staff = False
     clerk.save()
-    client.force_login(clerk)
+    admin_login(client, clerk)
 
     assert status(client, "/admin/catalog/brand/") == 302  # to the admin login page

@@ -1,5 +1,7 @@
 """Reads about users. Nothing here changes data."""
 
+from allauth.mfa.models import Authenticator
+
 from apps.users.accounts import roles
 from apps.users.accounts.enums import NextStep, SignupIntent
 from apps.users.accounts.models import User
@@ -38,5 +40,8 @@ def get_next_steps(user: User) -> list[str]:
 
 
 def has_two_step_login(user: User) -> bool:
-    """Whether the user has turned on two-step login. It arrives in build 06."""
-    return False
+    """Whether the user has an authenticator app set up for two-step login.
+
+    Recovery codes alone do not count: they come with the app and are its backup.
+    """
+    return bool(Authenticator.objects.filter(user=user, type=Authenticator.Type.TOTP).exists())
