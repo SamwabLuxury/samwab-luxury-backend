@@ -15,11 +15,15 @@ from typing import Any, ClassVar
 
 from django import forms
 from django.contrib import admin, messages
+from django.contrib.admin import ActionLocation
+from django.db.models import QuerySet
 from django.http import HttpRequest
 from django.utils.html import format_html
 
 from apps.inventory.pieces import photos, services
+from apps.inventory.pieces.enums import CustodyStatus
 from apps.inventory.pieces.models import Media, Piece, PieceMaterial
+from apps.platform.core.exceptions import AppError
 from apps.platform.core.storage import PhotoStorageError
 from apps.users.accounts.models import User
 
@@ -98,6 +102,7 @@ class PieceAdmin(admin.ModelAdmin):  # type: ignore[type-arg]
     autocomplete_fields = ("brand", "category", "product_model", "current_owner")
     inlines = (PieceMaterialInline, PhotoInline)
     readonly_fields = ("verification_status", "custody_status", "created_at", "updated_at")
+    actions = ("mark_in_transit", "mark_received", "put_in_vault")
     fieldsets = (
         (None, {"fields": ("title", "brand", "category", "product_model", "description")}),
         (
@@ -134,6 +139,45 @@ class PieceAdmin(admin.ModelAdmin):  # type: ignore[type-arg]
 
     def has_delete_permission(self, request: HttpRequest, obj: Any = None) -> bool:
         return False
+
+    def get_actions(
+        self, request: HttpRequest, action_location: Any = ActionLocation.CHANGE_LIST
+    ) -> Any:
+        actions = super().get_actions(request, action_location=action_location)
+        actions.pop("delete_selected", None)  # pieces are never deleted
+        return actions
+
+    # ---------- custody moves (E7a) ----------
+    # Until the custody build (16) records custody events with a site, a shelf and a
+    # seal number, staff move a piece along its path here. Each step goes through
+    # ``services.move_custody``: the state machine checks it and the audit log keeps it.
+
+    @admin.action(description="Mark on its way to the vault", permissions=["change"])
+    def mark_in_transit(self, request: HttpRequest, queryset: QuerySet[Piece]) -> None:
+        self._move(request, queryset, CustodyStatus.IN_TRANSIT, "is on its way to the vault")
+
+    @admin.action(description="Received at intake", permissions=["change"])
+    def mark_received(self, request: HttpRequest, queryset: QuerySet[Piece]) -> None:
+        self._move(request, queryset, CustodyStatus.AT_INTAKE, "was received at intake")
+
+    @admin.action(description="Put in the vault", permissions=["change"])
+    def put_in_vault(self, request: HttpRequest, queryset: QuerySet[Piece]) -> None:
+        self._move(request, queryset, CustodyStatus.IN_VAULT, "is in the vault")
+
+    def _move(self, request: HttpRequest, queryset: QuerySet[Piece], to: str, done: str) -> None:
+        staff: User = request.user  # type: ignore[assignment]
+        for piece in queryset:
+            if to == CustodyStatus.IN_TRANSIT and piece.custody_status != CustodyStatus.WITH_OWNER:
+                # A piece leaving the vault is a sale handed to a courier: orders do that.
+                refused = "only a piece still with its owner can be marked on its way to the vault."
+                self.message_user(request, f"{piece}: {refused}", messages.ERROR)
+                continue
+            try:
+                services.move_custody(piece, to=to, by=staff)
+            except AppError:
+                self.message_user(request, f"{piece}: {_why_not(piece)}", messages.ERROR)
+            else:
+                self.message_user(request, f"{piece} {done}.")
 
     def save_model(self, request: HttpRequest, obj: Any, form: Any, change: bool) -> None:
         staff: User = request.user  # type: ignore[assignment]
@@ -195,3 +239,17 @@ class PieceAdmin(admin.ModelAdmin):  # type: ignore[type-arg]
                     )
                     continue
                 formset.new_objects.append(media)
+
+
+_NEXT_STEP = {
+    CustodyStatus.WITH_OWNER: "it is with its owner. First: Mark on its way to the vault.",
+    CustodyStatus.IN_TRANSIT: "it is on its way. First: Received at intake.",
+    CustodyStatus.AT_INTAKE: "it is at intake. Next: Put in the vault.",
+    CustodyStatus.IN_VAULT: "it is already in the vault.",
+    CustodyStatus.WITH_BUYER: "it is with its buyer.",
+}
+
+
+def _why_not(piece: Piece) -> str:
+    """A refused custody step in plain words, naming the step needed first."""
+    return _NEXT_STEP[CustodyStatus(piece.custody_status)]
