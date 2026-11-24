@@ -11,7 +11,7 @@ from apps.inventory.pieces.tests.test_admin import form
 from apps.platform.audit.models import AuditEvent
 from apps.platform.core.exceptions import ConflictError
 from apps.users.accounts.models import User
-from apps.users.accounts.tests.helpers import make_staff
+from apps.users.accounts.tests.helpers import admin_login, make_staff
 
 pytestmark = pytest.mark.django_db
 
@@ -91,7 +91,7 @@ def test_a_refused_move_records_nothing(clerk: User) -> None:
 def test_registering_in_the_admin_records_the_piece_and_its_materials(
     client: Client, clerk: User
 ) -> None:
-    client.force_login(clerk)
+    admin_login(client, clerk)
 
     response = client.post(f"{ADMIN}/add/", form())
 
@@ -103,7 +103,7 @@ def test_registering_in_the_admin_records_the_piece_and_its_materials(
 
 
 def test_changing_the_materials_in_the_admin_is_recorded(client: Client, clerk: User) -> None:
-    client.force_login(clerk)
+    admin_login(client, clerk)
     values = form()
     client.post(f"{ADMIN}/add/", values)
     piece = Piece.objects.get()

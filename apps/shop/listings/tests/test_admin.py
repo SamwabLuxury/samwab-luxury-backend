@@ -14,7 +14,7 @@ from apps.shop.listings.tests.helpers import (
     make_live_listing,
     ready_piece,
 )
-from apps.users.accounts.tests.helpers import make_staff
+from apps.users.accounts.tests.helpers import admin_login, make_staff
 
 pytestmark = pytest.mark.django_db
 
@@ -24,7 +24,7 @@ LIST = "/admin/listings/listing/"
 
 @pytest.fixture
 def admin_client(client: Client) -> Client:
-    client.force_login(make_admin())
+    admin_login(client, make_admin())
     return client
 
 
@@ -145,6 +145,6 @@ def test_the_piece_and_status_never_change_on_the_form(admin_client: Client) -> 
 
 
 def test_staff_without_a_listing_role_cannot_see_listings(client: Client) -> None:
-    client.force_login(make_staff("intake@samwab.com", "intake_staff"))
+    admin_login(client, make_staff("intake@samwab.com", "intake_staff"))
 
     assert client.get(LIST).status_code == 403

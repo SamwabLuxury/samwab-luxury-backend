@@ -11,7 +11,7 @@ from apps.inventory.pieces.tests.helpers import make_piece
 from apps.inventory.pieces.tests.images import upload
 from apps.platform.audit.models import AuditEvent
 from apps.users.accounts.models import User
-from apps.users.accounts.tests.helpers import make_staff
+from apps.users.accounts.tests.helpers import admin_login, make_staff
 
 pytestmark = pytest.mark.django_db
 
@@ -26,7 +26,7 @@ def clerk() -> User:
 
 @pytest.fixture
 def clerk_client(client: Client, clerk: User) -> Client:
-    client.force_login(clerk)
+    admin_login(client, clerk)
     return client
 
 
@@ -190,7 +190,7 @@ def test_the_piece_page_shows_a_preview_of_each_photo(clerk_client: Client) -> N
 
 
 def test_a_catalog_editor_cannot_change_photos(client: Client) -> None:
-    client.force_login(make_staff("ed@samwab.com", "catalog_editor"))
+    admin_login(client, make_staff("ed@samwab.com", "catalog_editor"))
 
     assert client.get("/admin/pieces/piece/").status_code == 403
 
@@ -215,7 +215,7 @@ def test_if_photo_storage_is_down_staff_see_why_and_nothing_is_half_saved(
         raise PhotoStorageError()
 
     monkeypatch.setattr(services, "add_photo", down)
-    client.force_login(make_staff("intake@samwab.com", "intake_staff"))
+    admin_login(client, make_staff("intake@samwab.com", "intake_staff"))
     piece = make_piece()
 
     rows = photo_rows({"upload": upload(images.jpeg()), "kind": "listing"})

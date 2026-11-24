@@ -9,6 +9,7 @@ from apps.inventory.catalog.tests.helpers import make_material, make_product_mod
 from apps.inventory.pieces.models import Piece
 from apps.inventory.pieces.tests.helpers import make_house, make_piece
 from apps.users.accounts.models import User
+from apps.users.accounts.tests.helpers import admin_login
 
 pytestmark = pytest.mark.django_db
 
@@ -17,7 +18,7 @@ ADMIN = "/admin/pieces/piece"
 
 @pytest.fixture
 def boss_client(client: Client) -> Client:
-    client.force_login(User.objects.create_superuser("boss@samwab.com", "correct-horse-9"))
+    admin_login(client, User.objects.create_superuser("boss@samwab.com", "correct-horse-9"))
     return client
 
 

@@ -14,6 +14,7 @@ from apps.inventory.catalog.tests.helpers import (
     make_product_model,
 )
 from apps.users.accounts.models import User
+from apps.users.accounts.tests.helpers import admin_login
 
 pytestmark = pytest.mark.django_db
 
@@ -27,7 +28,7 @@ def boss() -> User:
 
 @pytest.fixture
 def boss_client(client: Client, boss: User) -> Client:
-    client.force_login(boss)
+    admin_login(client, boss)
     return client
 
 
