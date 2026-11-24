@@ -220,6 +220,10 @@ STORAGES = {
 }
 # The largest photo staff may upload, in bytes.
 PHOTO_MAX_BYTES = 20 * 1024 * 1024
+# The sizes the API sends for every photo (E7): each fits inside a square of this
+# many pixels, never enlarged. thumb: shop cards; medium: the piece page; zoom:
+# the "Look closer" viewer. Only on Cloudinary; elsewhere each is the photo itself.
+PHOTO_SIZES = {"thumb": 400, "medium": 1200, "zoom": 2400}
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 

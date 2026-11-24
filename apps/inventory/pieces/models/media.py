@@ -22,6 +22,14 @@ class Media(BaseModel):
     width = models.PositiveIntegerField()
     height = models.PositiveIntegerField()
     sort_order = models.PositiveSmallIntegerField(default=0)
+    # The piece page's "Look closer" viewer (E7, not in the DBML: a contract addition).
+    # Both optional; staff write them or leave them empty (the team, 24 Nov).
+    label = models.CharField(
+        max_length=60, blank=True, help_text="Optional. What the photo shows, e.g. Stamp."
+    )
+    caption = models.CharField(
+        max_length=300, blank=True, help_text="Optional. One line on what to look for."
+    )
 
     class Meta:
         db_table = "media"

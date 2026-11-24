@@ -23,7 +23,7 @@ import cloudinary.uploader
 import cloudinary.utils
 from django.conf import settings
 from django.core.files import File
-from django.core.files.storage import Storage
+from django.core.files.storage import Storage, storages
 from django.utils.deconstruct import deconstructible
 
 from apps.platform.core.exceptions import AppError
@@ -105,5 +105,42 @@ class CloudinaryStorage(Storage):
         )
         return str(link)
 
+    def sized_url(self, name: str, box: int) -> str:
+        """The photo shrunk to fit a ``box`` x ``box`` square, in the best format for
+        the browser asking.
+
+        Cloudinary's docs: ``limit`` keeps the shape and never enlarges a smaller
+        photo; ``q_auto`` and ``f_auto`` go last, each in its own part of the link.
+        Cloudinary makes each size the first time it is asked for, then serves it
+        from its CDN. Built here with no call to Cloudinary.
+        """
+        path = PurePosixPath(name)
+        link, _ = cloudinary.utils.cloudinary_url(
+            self._public_id(str(path)),
+            format=path.suffix.lstrip("."),
+            resource_type="image",
+            type="upload",
+            secure=True,
+            transformation=[
+                {"width": box, "height": box, "crop": "limit"},
+                {"quality": "auto"},
+                {"fetch_format": "auto"},
+            ],
+        )
+        return str(link)
+
     def _open(self, name: str, mode: str = "rb") -> Any:
         raise NotImplementedError("Photos on Cloudinary are read through their link (url).")
+
+
+def photo_links(name: str) -> dict[str, str]:
+    """A link for every size in ``PHOTO_SIZES`` (for example thumb, medium, zoom).
+
+    On Cloudinary each size is its own smaller file. Elsewhere (laptops, tests)
+    every size is the stored photo itself.
+    """
+    storage = storages["default"]
+    if isinstance(storage, CloudinaryStorage):
+        return {size: storage.sized_url(name, box) for size, box in settings.PHOTO_SIZES.items()}
+    link = storage.url(name)
+    return dict.fromkeys(settings.PHOTO_SIZES, link)
