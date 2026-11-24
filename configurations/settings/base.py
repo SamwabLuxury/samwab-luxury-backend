@@ -45,6 +45,7 @@ THIRD_PARTY_APPS = [
     "allauth",
     "apps.users.accounts.allauth_config.EmailAddressesConfig",  # allauth.account, renamed
     "allauth.headless",
+    "allauth.mfa",  # two-step login: authenticator app codes and recovery codes (build 06)
 ]
 LOCAL_APPS = [
     "apps.platform.core",
@@ -75,6 +76,8 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "allauth.account.middleware.AccountMiddleware",
+    # Every staff member passes the second step before any admin page (build 06).
+    "apps.users.accounts.middleware.AdminTwoStepMiddleware",
 ]
 
 ROOT_URLCONF = "configurations.urls"
@@ -149,6 +152,14 @@ ACCOUNT_EMAIL_VERIFICATION_BY_CODE_ENABLED = True
 ACCOUNT_PASSWORD_RESET_BY_CODE_ENABLED = True
 
 ACCOUNT_EMAIL_SUBJECT_PREFIX = "Samwab: "
+
+# ---------- Two-step login (allauth.mfa, build 06) ----------
+# An authenticator app's 6-digit code (TOTP) or one of 10 one-time recovery codes,
+# after the password. Passkeys stay off until the team asks for them.
+# Staff must use it: apps/users/accounts/middleware.py guards every admin page.
+MFA_ADAPTER = "apps.users.accounts.mfa_adapter.MFAAdapter"  # stores app keys encrypted
+MFA_SUPPORTED_TYPES = ["totp", "recovery_codes"]
+MFA_TOTP_ISSUER = "Samwab"  # the name shown in the authenticator app
 
 # Links inside allauth's emails point at these web-app pages.
 FRONTEND_URL = env("DJANGO_FRONTEND_URL", default="http://localhost:3000")

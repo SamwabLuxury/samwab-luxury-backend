@@ -1,0 +1,18 @@
+{% extends "admin/base_site.html" %}
+{# The admin's second step (build 06): a code from the authenticator app or a recovery code. #}
+
+{% block content %}
+<div id="content-main">
+  <p>Open your authenticator app and type the 6-digit code for Samwab.
+  Lost your phone? Type one of your 8-digit recovery codes instead.</p>
+  <form method="post">
+    {% csrf_token %}
+    {{ form.as_div }}
+    <div class="submit-row"><input type="submit" value="Continue" class="default"></div>
+  </form>
+  <form method="post" action="{% url 'admin:logout' %}">
+    {% csrf_token %}
+    <p><button type="submit" class="button">Log out</button></p>
+  </form>
+</div>
+{% endblock %}

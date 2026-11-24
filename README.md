@@ -118,7 +118,8 @@ python manage.py createsuperuser    # asks for your email and a password
 ```
 
 The superuser is your own login for the admin site. Use your real email; there is
-no username.
+no username. The first time you open the admin it asks you to set up two-step login
+with an authenticator app on your phone (Try it, "Two-step login for staff").
 
 ### 7. Turn on the pre-commit checks (optional, recommended)
 
@@ -218,6 +219,24 @@ Log in to the admin site as a superuser (only admins list pieces for now).
 3. Log in as that person in a private browser window. They see the catalog screens
    only. Add them to `intake_staff` instead and they see pieces, with the catalog
    read only.
+
+### Two-step login for staff
+
+Every staff account (superusers too) passes a second step before any admin page.
+
+1. Install an authenticator app on your phone: Google Authenticator, Microsoft
+   Authenticator, 1Password or similar.
+2. Log in at http://127.0.0.1:8000/admin/ with your email and password. The admin
+   sends you to **Set up two-step login**: scan the QR code with the app (or type the
+   key under it), then type the 6-digit code the app shows.
+3. The next page shows 10 **recovery codes**, once. Save them in your password
+   manager. Each works once instead of the app's code, for a lost phone.
+4. From now on, every admin login asks for the app's code after the password.
+
+Five wrong codes lock the second step for 15 minutes. Lost the phone and the codes?
+Another developer (or you, on your machine) runs
+`python manage.py reset_two_step <email>`; the person sets it up again at the next
+admin page. On the live site, run it as a one-off command (Deploying, "One-off commands").
 
 ### Add a delivery address
 
@@ -533,6 +552,11 @@ the branch and the database file. The full log is saved in `~/samwab-build-logs/
 | `409` with `idempotency_key_in_progress` | The first request with that key is still running | Wait a moment and send it again: you will get its answer |
 | `NotSupportedError: FOR UPDATE cannot be applied to the nullable side of an outer join` (PostgreSQL only) | A row lock on a query that joins optional related rows | Lock only the main table: `select_for_update(of=("self",))` |
 | `403` with `"code": "csrf_failed"` | A request that changes something was sent without the `X-CSRFToken` header | Call `/_allauth/browser/v1/config` first and send the `csrftoken` cookie's value in `X-CSRFToken` |
+| The admin sends you to **Set up two-step login** | Every staff account needs two-step login (build 06) | Follow the page: scan the QR code with an authenticator app and type its code (Try it, "Two-step login for staff") |
+| `That code is not right` on the admin's code page | The code is old, or the phone's clock is wrong | Type the newest code; turn on automatic date and time on the phone |
+| `Too many wrong codes` | Five wrong codes in a row | Wait 15 minutes. Each Render worker counts on its own until the background-jobs build adds Redis |
+| A staff member lost the phone and the recovery codes | Nothing else can pass the second step | `python manage.py reset_two_step <email>` (on the live site: Deploying, "One-off commands") |
+| `ModuleNotFoundError: No module named 'qrcode'` | Packages from before build 06 | `python -m pip install -r requirements/dev.txt` |
 | `400` with `too_many_login_attempts` | 5 wrong passwords for that email, or a login in the first 10 seconds after sign-up | Wait 5 minutes (or 10 seconds after sign-up) |
 | Saving a piece says `attributes: ... is a required property` or similar | The attributes break the category's or design's schema | Fix the attributes as the message says, or change the schema in the catalog |
 | Saving a category says `Not a valid JSON Schema` | A mistake in `attribute_schema` | Check the schema; the message says which part is wrong |
@@ -631,7 +655,7 @@ Other files at the top of the repository:
 
 | App | What it owns |
 |---|---|
-| `accounts` | Users. People log in with their email; there is no username. Roles are Django groups, and each staff role's admin permissions are set from code. |
+| `accounts` | Users. People log in with their email; there is no username. Roles are Django groups, and each staff role's admin permissions are set from code. Two-step login (allauth.mfa): required for staff before any admin page. |
 | `idempotency` | The `Idempotency-Key` header (`idempotency_keys`): a create request sent twice does its work once, and the retry gets the first answer. Views use it with `@idempotent`. |
 | `audit` | The audit log (`audit_events`): who changed what, when and from where. Rows are only ever added. Other apps write to it from their services. |
 | `catalog` | What can be sold: brands, categories, named designs (such as the Kelly 28) and materials; the capture protocols staff follow for each category or design; comparable sales for fair prices. Staff run it in the admin site; the API only reads it. |
@@ -747,6 +771,22 @@ How the web app uses them:
 5. After 5 wrong passwords for one email, login is refused for 5 minutes
    (`too_many_login_attempts`). A login in the first 10 seconds after sign-up is also
    refused that way, because a fresh code can only be sent once every 10 seconds.
+
+**Two-step login** (allauth.mfa, build 06): an authenticator app's 6-digit code, or
+one of 10 one-time 8-digit recovery codes, after the password. Passkeys are off.
+Anyone may turn it on; staff must (the admin asks for it, see Try it).
+
+| Method and path | Purpose |
+|---|---|
+| `POST /_allauth/browser/v1/auth/2fa/authenticate` | `{"code"}`: the second step, when login answered 401 with the `mfa_authenticate` flow pending |
+| `GET /_allauth/browser/v1/account/authenticators` | Her authenticators (`totp`, `recovery_codes`) |
+| `GET`, `POST`, `DELETE /_allauth/browser/v1/account/authenticators/totp` | Start, confirm (`{"code"}`) or remove the authenticator app. Needs a recent password (reauthenticate) |
+| `GET`, `POST /_allauth/browser/v1/account/authenticators/recovery-codes` | See or renew the recovery codes |
+
+With two-step login on, `POST /auth/login` answers 401 with the `mfa_authenticate`
+flow pending until the code is sent. `mfa_enabled` on `GET /api/v1/me/` says whether
+she has an authenticator app. The app's key is stored encrypted with
+`DJANGO_FIELD_ENCRYPTION_KEYS` (`apps/users/accounts/mfa_adapter.py`).
 
 `next_steps` values: `accept_terms`, `identity_check`, `payout_account`,
 `dealer_application`, `await_dealer_decision`. Until the builds that record terms,
@@ -1234,15 +1274,17 @@ for forms. Add a custom domain with `DJANGO_ALLOWED_HOSTS` and
 **After the first deploy:**
 
 - Check https://samwab-luxury-backnd.onrender.com/api/v1/health/ answers `{"status": "ok"}`.
-- Make your admin login: Render's **Shell** tab is not on the free plan, so run it
-  from your machine once, against Neon's **direct** string (never commit it):
-  ```bash
-  DJANGO_SETTINGS_MODULE=configurations.settings.production \
-  DJANGO_SECRET_KEY=any-long-text DATABASE_URL='<Neon direct connection string>' \
-  python manage.py createsuperuser
-  ```
-  (Production settings need the PostgreSQL driver, which `requirements/dev.txt` installs.)
-- Then open `/admin/` on the Render address.
+- **One-off commands on the live site** (Render's **Shell** tab is not on the free
+  plan): add ` && python manage.py <command>` to the end of the **Build command**
+  once, deploy (Manual Deploy → Deploy latest commit), read the output in the deploy
+  log, then remove it again and save. The command runs with Render's own variables,
+  so no secret leaves Render. Examples:
+  - an admin login: put `DJANGO_SUPERUSER_EMAIL` and `DJANGO_SUPERUSER_PASSWORD` in
+    Render's Environment for this one deploy, add `python manage.py createsuperuser --noinput`,
+    then remove the command **and both variables**;
+  - a staff member lost the phone and the recovery codes: `python manage.py reset_two_step <email>`.
+- Then open `/admin/` on the Render address and set up two-step login (Try it,
+  "Two-step login for staff"). Save the recovery codes in your password manager.
 
 CI rehearses all of this on every push: the PostgreSQL job runs Django's
 deployment checklist (`check --deploy`), `collectstatic`, `migrate`, starts
@@ -1289,7 +1331,7 @@ On your own machine, only `DJANGO_SECRET_KEY` is needed.
 The README is updated in every build.
 
 
-Last build: E6, photos on Cloudinary.
+Last build: 06, two-step login.
 
 ## Build history
 
@@ -1318,6 +1360,7 @@ One line per build, newest last. Each build is one feature, merged into `dev`.
 | E5 | 23 Nov 2026 | Orders paid in full: `orders`, `payments` and `refunds` tables; `POST`/`GET /api/v1/orders/`, `/{id}/`, `/{id}/cancel/`; the 15-minute checkout hold; webhook events acted on (state read from Stripe); late money refunded; `expire_orders` and `reconcile_payments`; browse shows the hold; Stripe's own logging quieter; allauth's admin section renamed |
 | T1 | 23 Nov 2026 | Tidy-up: apps grouped into folders by area (`platform/`, `users/`, `inventory/`, `shop/`, `money/`); app labels, tables, migrations, URLs and the API description unchanged |
 | E6 | 23 Nov 2026 | Photos on Cloudinary: `CloudinaryStorage` (official `cloudinary` 1.47.0) behind Django's storage layer; folders `samwab/local` and `samwab/live`; the live site requires `CLOUDINARY_URL`; `check_photo_storage`; staff see a clear message if storage is down |
+| 06 | 23 Nov 2026 | Two-step login: allauth.mfa (authenticator app codes and 10 recovery codes, app keys encrypted); required for every staff account before any admin page (set-up page with QR code, code page, 5 wrong codes lock it for 15 minutes); allauth's two-step API endpoints; `mfa_enabled` on `GET /api/v1/me/`; `reset_two_step` command; set-up, recovery-code use and reset audited |
 
 Builds run in the order the roadmap sets, so numbers can skip: builds 12 to 14 came
 before 06 to 11 to start on what buyers see, then 07, 08, the 08a tidy-up and build 01 (production deploy).

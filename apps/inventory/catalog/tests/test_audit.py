@@ -19,7 +19,7 @@ from apps.inventory.catalog.tests.helpers import (
 from apps.platform.audit.models import AuditEvent
 from apps.platform.core.request_id import REQUEST_ID_HEADER
 from apps.users.accounts.models import User
-from apps.users.accounts.tests.helpers import make_staff
+from apps.users.accounts.tests.helpers import admin_login, make_staff
 
 pytestmark = pytest.mark.django_db
 
@@ -34,7 +34,7 @@ def editor() -> User:
 
 @pytest.fixture
 def editor_client(client: Client, editor: User) -> Client:
-    client.force_login(editor)
+    admin_login(client, editor)
     return client
 
 

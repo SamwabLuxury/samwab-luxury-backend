@@ -1,0 +1,27 @@
+{% extends "admin/base_site.html" %}
+{# First admin visit for a staff member (build 06): connect an authenticator app. #}
+
+{% block content %}
+<div id="content-main">
+  <p>Staff accounts need two-step login. It takes a minute, once.</p>
+  <ol>
+    <li>Install an authenticator app on your phone (Google Authenticator, Microsoft
+      Authenticator, 1Password or similar).</li>
+    <li>In the app, add an account and scan this code:
+      <div style="width: 220px; background: #fff; padding: 8px; margin: 8px 0;">{{ qr_svg }}</div>
+      Cannot scan? Type this key instead:
+      <code>{% for group in key_groups %}{{ group }} {% endfor %}</code>
+    </li>
+    <li>Type the 6-digit code the app now shows for Samwab.</li>
+  </ol>
+  <form method="post">
+    {% csrf_token %}
+    {{ form.as_div }}
+    <div class="submit-row"><input type="submit" value="Turn on two-step login" class="default"></div>
+  </form>
+  <form method="post" action="{% url 'admin:logout' %}">
+    {% csrf_token %}
+    <p><button type="submit" class="button">Log out</button></p>
+  </form>
+</div>
+{% endblock %}

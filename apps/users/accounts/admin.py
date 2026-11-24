@@ -1,5 +1,6 @@
 from typing import Any
 
+from allauth.mfa.models import Authenticator
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 from django.contrib.auth.forms import AdminUserCreationForm, UserChangeForm
@@ -7,6 +8,10 @@ from django.http import HttpRequest
 
 from apps.users.accounts import services
 from apps.users.accounts.models import User
+
+# allauth.mfa registers its authenticators in the admin. Removing one there would skip
+# the audit log, so the screen is taken away: reset with `manage.py reset_two_step`.
+admin.site.unregister(Authenticator)
 
 
 class UserAddForm(AdminUserCreationForm):  # type: ignore[type-arg]

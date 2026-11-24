@@ -8,7 +8,7 @@ from django.test import Client
 
 from apps.platform.audit.models import AuditEvent
 from apps.users.accounts.models import User
-from apps.users.accounts.tests.helpers import make_staff
+from apps.users.accounts.tests.helpers import admin_login, make_staff
 
 pytestmark = pytest.mark.django_db
 
@@ -37,7 +37,7 @@ def page(response: Any) -> str:
 
 
 def test_the_list_shows_and_searches_events(client: Client, boss: User, event: AuditEvent) -> None:
-    client.force_login(boss)
+    admin_login(client, boss)
 
     html = page(client.get(f"{ADMIN}/", {"q": "req-12345678"}))
 
@@ -46,7 +46,7 @@ def test_the_list_shows_and_searches_events(client: Client, boss: User, event: A
 
 
 def test_an_event_opens_read_only(client: Client, boss: User, event: AuditEvent) -> None:
-    client.force_login(boss)
+    admin_login(client, boss)
 
     html = page(client.get(f"{ADMIN}/{event.id}/change/"))
 
@@ -58,7 +58,7 @@ def test_an_event_opens_read_only(client: Client, boss: User, event: AuditEvent)
 def test_even_a_superuser_cannot_add_change_or_delete(
     client: Client, boss: User, event: AuditEvent
 ) -> None:
-    client.force_login(boss)
+    admin_login(client, boss)
 
     assert client.get(f"{ADMIN}/add/").status_code == 403
     assert client.post(f"{ADMIN}/{event.id}/change/", {"action": "x"}).status_code == 403
@@ -70,7 +70,7 @@ def test_even_a_superuser_cannot_add_change_or_delete(
 
 def test_staff_need_the_view_permission(client: Client, event: AuditEvent) -> None:
     clerk = make_staff("clerk@samwab.com")
-    client.force_login(clerk)
+    admin_login(client, clerk)
     assert client.get(f"{ADMIN}/").status_code == 403
 
     clerk.user_permissions.add(Permission.objects.get(codename="view_auditevent"))
