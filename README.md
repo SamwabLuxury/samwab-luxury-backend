@@ -196,20 +196,25 @@ again, or remove `CLOUDINARY_URL` from `.env` to go back to `media/`.
 
 ### List a piece for sale
 
-Log in to the admin site as a superuser (only admins list pieces for now).
+Log in to the admin site as a superuser (only admins list pieces for now). Every
+step is an admin screen, so it works the same on the live site (no shell needed).
 
-1. The piece must be house stock in the vault with at least one listing photo.
-   On your machine, put it in the vault from `python manage.py shell`:
-   ```python
-   from apps.inventory.pieces.models import Piece
-
-   Piece.objects.filter(title="Kelly 28, Gold Togo").update(custody_status="in_vault")
-   ```
-   (On the live system, custody events will do this; this shortcut is for trying it out.)
-2. Open http://127.0.0.1:8000/admin/listings/listing/add/, pick the piece, choose
+1. **House account (once):** house stock belongs to Samwab's house account. Add a
+   user at `/admin/accounts/user/add/` (for example `house@samwabluxury.com`), then
+   on its page tick **Is house account** and save.
+2. **The piece:** `/admin/pieces/piece/add/`, source **House stock**, owner the house
+   account, brand, category, title; in **Photos** add at least one photo of kind
+   **Listing photo** (Photos of a piece, above).
+3. **Into the vault:** on the piece list, tick the piece, choose
+   **Mark on its way to the vault** and press **Go**; then **Received at intake**;
+   then **Put in the vault**. Each step is checked (a step out of order is refused
+   with the step needed first) and recorded in the audit log. A piece already in the
+   vault cannot be sent out from here: a sale does that. (Build E7a; the custody
+   build will replace these with custody events that also record the shelf.)
+4. Open http://127.0.0.1:8000/admin/listings/listing/add/, pick the piece, choose
    **From the vault**, type the price in cents (`1250000` is $12,500.00) and save.
-3. On the list page, tick it, choose **Publish the selected drafts** and press **Go**.
-4. Open http://127.0.0.1:8000/api/v1/listings/ to see it in the browse API.
+5. On the list page, tick it, choose **Publish the selected drafts** and press **Go**.
+6. Open http://127.0.0.1:8000/api/v1/listings/ to see it in the browse API.
 
 ### Staff roles and the audit log
 
@@ -1354,7 +1359,7 @@ On your own machine, only `DJANGO_SECRET_KEY` is needed.
 The README is updated in every build.
 
 
-Last build: E7, piece page details.
+Last build: E7a, custody steps in the admin.
 
 ## Build history
 
@@ -1385,6 +1390,7 @@ One line per build, newest last. Each build is one feature, merged into `dev`.
 | E6 | 23 Nov 2026 | Photos on Cloudinary: `CloudinaryStorage` (official `cloudinary` 1.47.0) behind Django's storage layer; folders `samwab/local` and `samwab/live`; the live site requires `CLOUDINARY_URL`; `check_photo_storage`; staff see a clear message if storage is down |
 | 06 | 23 Nov 2026 | Two-step login: allauth.mfa (authenticator app codes and 10 recovery codes, app keys encrypted); required for every staff account before any admin page (set-up page with QR code, code page, 5 wrong codes lock it for 15 minutes); allauth's two-step API endpoints; `mfa_enabled` on `GET /api/v1/me/`; `reset_two_step` command; set-up, recovery-code use and reset audited |
 | E7 | 24 Nov 2026 | Piece page details: every photo in the listing API has `sizes` (`thumb`, `medium`, `zoom`: Cloudinary copies within 400, 1,200 and 2,400 px, `q_auto` and `f_auto`); optional photo `label` and `caption` (staff, in the piece's admin page, audited); `lot_record` rows (maker, model, year, size, grade, then attributes named by the schema `title`); a chance-based encryption test made exact |
+| E7a | 24 Nov 2026 | Custody steps in the admin: on the piece list, **Mark on its way to the vault**, **Received at intake** and **Put in the vault** (superusers and `intake_staff`), through the state machine and the audit log, with plain refusals naming the step needed first; "List a piece for sale" now needs no shell, so it works on the live site |
 
 Builds run in the order the roadmap sets, so numbers can skip: builds 12 to 14 came
 before 06 to 11 to start on what buyers see, then 07, 08, the 08a tidy-up and build 01 (production deploy).
