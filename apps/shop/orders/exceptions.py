@@ -21,6 +21,11 @@ class ReservationNotAvailableError(AppError):
     message = "Reserving with a deposit is not available yet; pay in full."
 
 
+class DropNotOpenError(AppError):
+    code = "drop_not_open"
+    message = "This piece is in a drop that is not open to you yet."
+
+
 class DeliveryChoiceNotAvailableError(AppError):
     code = "delivery_choice_not_available"
     message = "This delivery choice is not available yet. For now, send your own courier."
