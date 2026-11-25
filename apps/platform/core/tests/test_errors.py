@@ -55,7 +55,7 @@ def test_missing_fields_are_listed_one_by_one(client: Client) -> None:
     body = problem(post_json(client, "/api/v1/validate/", {}), 400, "validation_error")
 
     assert body["title"] == "Bad Request"
-    assert {"field": "email", "code": "required", "message": "This field is required."} in body[
+    assert {"field": "email", "code": "required", "message": "Please fill this in."} in body[
         "errors"
     ]
     assert {error["field"] for error in body["errors"]} == {"email", "address", "lines"}

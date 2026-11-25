@@ -8,9 +8,9 @@ front end needs only one piece of code to read errors::
       "title": "Bad Request",
       "status": 400,
       "code": "validation_error",
-      "detail": "One or more fields are invalid.",
+      "detail": "Some details need another look. Please check the highlighted fields.",
       "instance": "/api/v1/me/",
-      "errors": [{"field": "email", "code": "required", "message": "This field is required."}],
+      "errors": [{"field": "email", "code": "required", "message": "Please fill this in."}],
       "request_id": "0193..."
     }
 
@@ -30,6 +30,7 @@ from rest_framework.response import Response
 from rest_framework.views import exception_handler as drf_exception_handler
 from rest_framework.views import set_rollback
 
+from apps.platform.core.api.plain_words import GENERAL, field_message
 from apps.platform.core.exceptions import AppError
 from apps.platform.core.request_id import get_request_id
 
@@ -40,7 +41,7 @@ PROBLEM_CONTENT_TYPE = "application/problem+json"
 API_PREFIXES = ("/api/", "/_allauth/")
 
 CSRF_FAILED_CODE = "csrf_failed"
-CSRF_FAILED_DETAIL = "The CSRF token is missing or wrong. Reload and try again."
+CSRF_FAILED_DETAIL = GENERAL[CSRF_FAILED_CODE]
 
 
 def problem_body(
@@ -90,7 +91,7 @@ def _flatten_field_errors(detail: Any, path: str = "") -> list[dict[str, Any]]:
             found.extend(_flatten_field_errors(item, child_path))
         return found
     code = getattr(detail, "code", None) or "invalid"
-    return [{"field": path or None, "code": code, "message": str(detail)}]
+    return [{"field": path or None, "code": code, "message": field_message(code, str(detail))}]
 
 
 def exception_handler(exc: Exception, context: dict[str, Any]) -> Response | None:
@@ -116,14 +117,14 @@ def exception_handler(exc: Exception, context: dict[str, Any]) -> Response | Non
 
     if isinstance(exc, drf_exceptions.ValidationError):
         code = "validation_error"
-        detail = "One or more fields are invalid."
+        detail = GENERAL[code]
         errors = _flatten_field_errors(exc.detail)
     elif isinstance(exc, drf_exceptions.NotAuthenticated | drf_exceptions.AuthenticationFailed):
         # DRF answers 403 here when login is by session cookie. We always answer 401,
         # so the front end can tell "log in first" (401) from "not allowed" (403).
         status = 401
         code = "not_authenticated"
-        detail = "You need to log in to do this."
+        detail = GENERAL[code]
     elif isinstance(exc, drf_exceptions.PermissionDenied) and str(exc.detail).startswith(
         "CSRF Failed"
     ):
@@ -133,13 +134,16 @@ def exception_handler(exc: Exception, context: dict[str, Any]) -> Response | Non
         detail = CSRF_FAILED_DETAIL
     elif isinstance(exc, drf_exceptions.APIException):
         code = str(exc.get_codes()) if isinstance(exc.detail, str) else exc.default_code
-        detail = str(exc.detail)
+        # The framework's stock wording ("JSON parse error - ...") becomes ours; a
+        # message we wrote for people is kept.
+        stock = str(exc.detail) == str(exc.default_detail) or code in ("parse_error", "throttled")
+        detail = GENERAL.get(code, str(exc.detail)) if stock else str(exc.detail)
     elif isinstance(exc, Http404):
         code = "not_found"
-        detail = "Not found."
+        detail = GENERAL[code]
     elif isinstance(exc, PermissionDenied):
         code = "permission_denied"
-        detail = "You do not have permission to do this."
+        detail = GENERAL[code]
     else:  # pragma: no cover - drf_exception_handler only answers for the cases above
         code = "error"
         detail = HTTPStatus(status).phrase
@@ -160,7 +164,7 @@ def page_not_found(request: HttpRequest, exception: Exception) -> HttpResponse:
     """Used when no URL matches. API paths get JSON; other paths get Django's page."""
     if _is_api_request(request):
         body = problem_body(
-            status=404, code="not_found", detail="Not found.", instance=request.path
+            status=404, code="not_found", detail=GENERAL["not_found"], instance=request.path
         )
         return JsonResponse(body, status=404, content_type=PROBLEM_CONTENT_TYPE)
     return defaults.page_not_found(request, exception)
@@ -172,7 +176,7 @@ def server_error(request: HttpRequest) -> HttpResponse:
         body = problem_body(
             status=500,
             code="server_error",
-            detail="Something went wrong on our side. Please try again.",
+            detail=GENERAL["server_error"],
             instance=request.path,
         )
         return JsonResponse(body, status=500, content_type=PROBLEM_CONTENT_TYPE)

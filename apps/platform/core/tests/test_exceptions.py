@@ -46,7 +46,10 @@ def test_setting_one_error_does_not_change_the_class() -> None:
     ConflictError("Changed.", code="changed")
 
     assert ConflictError().code == "conflict"
-    assert ConflictError().message == "The request conflicts with the current state."
+    assert (
+        ConflictError().message
+        == "This can't be done right now. Please refresh the page and try again."
+    )
 
 
 def test_a_subclass_sets_its_own_code_and_message() -> None:
