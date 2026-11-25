@@ -56,6 +56,7 @@ LOCAL_APPS = [
     "apps.inventory.pieces",
     "apps.shop.listings",
     "apps.users.addresses",
+    "apps.users.mailing_list",
     "apps.money.payments",
     "apps.shop.orders",
 ]
@@ -169,6 +170,11 @@ HEADLESS_FRONTEND_URLS = {
     "account_reset_password_from_key": f"{FRONTEND_URL}/account/password/reset/key/{{key}}",
     "account_signup": f"{FRONTEND_URL}/account/signup",
 }
+# The web app's pages for the mailing list's emailed links (build E12). The page
+# sends the token to POST /api/v1/mailing-list/confirm/ or .../unsubscribe/.
+MAILING_LIST_CONFIRM_URL = f"{FRONTEND_URL}/mailing-list/confirm/{{token}}"
+MAILING_LIST_UNSUBSCRIBE_URL = f"{FRONTEND_URL}/mailing-list/unsubscribe/{{token}}"
+MAILING_LIST_CONFIRM_DAYS = 7
 
 # ---------- Email ----------
 # Django 6.1 sends email through MAILERS. Servers use SMTP with these variables;
