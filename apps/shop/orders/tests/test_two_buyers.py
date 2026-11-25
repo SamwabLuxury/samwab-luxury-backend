@@ -9,6 +9,7 @@ from django.test import Client
 
 from apps.shop.orders.models import Order
 from apps.shop.orders.tests.helpers import buyer, live_listing, post_order
+from apps.users.addresses.tests.helpers import make_address
 
 
 @pytest.mark.skipif(connection.vendor != "postgresql", reason="needs real concurrent connections")
@@ -16,6 +17,7 @@ from apps.shop.orders.tests.helpers import buyer, live_listing, post_order
 def test_only_one_of_two_buyers_at_the_same_moment_gets_the_piece() -> None:
     listing = live_listing()
     people = [buyer("ada@example.com"), buyer("chidi@example.com")]
+    addresses = {p.email: make_address(p) for p in people}
     answers: list[int] = []
     start = threading.Barrier(2)
 
@@ -26,7 +28,8 @@ def test_only_one_of_two_buyers_at_the_same_moment_gets_the_piece() -> None:
         body = {
             "listing_id": str(listing.pk),
             "payment_option": "pay_in_full",
-            "delivery_choice": "keep_in_vault",
+            "delivery_choice": "buyer_courier",
+            "shipping_address_id": str(addresses[who_email].pk),
         }
         answers.append(post_order(client, body, key=f"k-{who_email}").status_code)
         connection.close()

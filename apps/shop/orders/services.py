@@ -8,6 +8,7 @@ repeated, late or crossing messages cannot move an order twice or backwards.
 
 import logging
 
+from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
@@ -24,6 +25,7 @@ from apps.shop.listings.models import Listing
 from apps.shop.orders.enums import CancelReason, Channel, OrderKind, OrderStatus
 from apps.shop.orders.exceptions import (
     CannotBuyOwnListingError,
+    DeliveryChoiceNotAvailableError,
     ListingUnavailableError,
     OrderAlreadyPaidError,
     OrderNotCancellableError,
@@ -55,8 +57,11 @@ def create_order(
 
     Returns the order and the client secret the browser confirms the payment with.
     The listing row is locked, so two buyers cannot both get the piece. If the
-    provider cannot be reached, nothing is saved.
+    provider cannot be reached, nothing is saved. Only the delivery choices in
+    ``DELIVERY_CHOICES_OFFERED`` are accepted.
     """
+    if delivery_choice not in settings.DELIVERY_CHOICES_OFFERED:
+        raise DeliveryChoiceNotAvailableError()
     release_expired_hold(listing)
     with transaction.atomic():
         listing = (

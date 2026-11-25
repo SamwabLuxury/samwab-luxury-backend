@@ -21,6 +21,11 @@ class ReservationNotAvailableError(AppError):
     message = "Reserving with a deposit is not available yet; pay in full."
 
 
+class DeliveryChoiceNotAvailableError(AppError):
+    code = "delivery_choice_not_available"
+    message = "This delivery choice is not available yet. For now, send your own courier."
+
+
 class CannotBuyOwnListingError(AppError):
     code = "cannot_buy_own_listing"
     message = "You cannot buy your own listing."

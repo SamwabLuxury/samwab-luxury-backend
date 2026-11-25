@@ -27,8 +27,9 @@ def live_listing(**fields: Any) -> Listing:
 def place_order(
     who: User | None = None, listing: Listing | None = None, **fields: Any
 ) -> tuple[Order, str]:
-    """An order paid in full, kept in the vault: returns the order and the client secret."""
-    fields.setdefault("delivery_choice", "keep_in_vault")
+    """An order paid in full, collected by the buyer's own courier: returns the order and
+    the client secret."""
+    fields.setdefault("delivery_choice", "buyer_courier")
     return services.create_order(who or buyer(), listing or live_listing(), **fields)
 
 
