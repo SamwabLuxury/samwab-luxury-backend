@@ -9,7 +9,7 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 
-from apps.inventory.catalog.enums import Department, SaleSource
+from apps.inventory.catalog.enums import ConditionGrade, Department, SaleSource
 from apps.inventory.catalog.models.catalog import Brand, Category, ProductModel
 from apps.platform.core.models import BaseModel
 from apps.platform.core.money import DEFAULT_CURRENCY, Money
@@ -33,7 +33,13 @@ class ComparableSale(BaseModel):
     size_label = models.CharField(max_length=20, blank=True, help_text="Such as 28 or EU 38.")
     source = models.CharField(max_length=40, choices=SaleSource.choices)
     source_url = models.URLField(max_length=2000, blank=True)
-    condition_grade = models.CharField(max_length=20, blank=True)
+    condition_grade = models.CharField(
+        max_length=20,
+        choices=ConditionGrade.choices,
+        blank=True,
+        help_text="The grade of the piece that sold. "
+        "The price explainer only compares the same grade.",
+    )
     price_minor = models.PositiveBigIntegerField(
         help_text="US cents: $14,200.00 is 1420000. Convert other currencies on the sale date."
     )
@@ -61,6 +67,10 @@ class ComparableSale(BaseModel):
             models.CheckConstraint(
                 condition=models.Q(department__in=[*Department.values, ""]),
                 name="comparable_sales_department_is_known",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(condition_grade__in=[*ConditionGrade.values, ""]),
+                name="comparable_sales_grade_is_known",
             ),
         )
 

@@ -215,6 +215,11 @@ step is an admin screen, so it works the same on the live site (no shell needed)
    **From the vault**, type the price in cents (`1250000` is $12,500.00) and save.
 5. On the list page, tick it, choose **Publish the selected drafts** and press **Go**.
 6. Open http://127.0.0.1:8000/api/v1/listings/ to see it in the browse API.
+7. **Price explainer (optional):** give the piece a condition grade, and add past
+   sales of the same design at that grade at `/admin/catalog/comparablesale/add/`;
+   they appear under `price_explainer.recent_sales` on
+   `/api/v1/listings/<id>/`. On the listing's page, **Price explainer: adjustments**
+   takes lines such as "Complete set", **Add**, `30000`.
 
 ### Staff roles and the audit log
 
@@ -842,8 +847,11 @@ Staff run the catalog in the admin site (`/admin/catalog/`):
   protocol that applies: the design's own if it has one, otherwise the category's.
 - **Comparable sales** (`/admin/catalog/comparablesale/`) record what similar
   pieces sold for, in whole US cents (convert other currencies on the sale date).
-  The design, when given, must match the brand and category. They feed the
-  fair-price explainer and the low-bid check in later builds.
+  The design, when given, must match the brand and category. The grade is one of
+  the five piece grades (New, Excellent, Very good, Good, Fair) or empty; only a
+  graded sale can appear in a listing's price explainer (Listings, below), which
+  compares the same design at the same grade. They also feed the low-bid check in a
+  later build.
 - `attribute_schema` on a category or design must be a valid JSON Schema
   (draft 2020-12), because every piece in it is checked against it. For example, a
   category for bags could require a width:
@@ -1060,8 +1068,8 @@ with the owner onboarding builds.
 
   An unknown slug gives an empty list; a bad value (`?condition_min=mint`,
   `?price_max=-1`) gives 400 `validation_error` naming the field.
-- `GET /api/v1/listings/{id}/`: one live listing. Drafts, withdrawn listings and
-  unknown ids are 404.
+- `GET /api/v1/listings/{id}/`: one live listing, with its `price_explainer`
+  (below). Drafts, withdrawn listings and unknown ids are 404.
 
 Each listing has `id`, `piece` (the public view: title, description, brand,
 category, design, size, year, attributes, condition, statuses, `media` and
@@ -1083,6 +1091,34 @@ owner.
   else from the key (`size_cm` → "Size cm"). Lists become `a, b, c`; objects
   `depth 10, height 22, width 28`; `true` → Yes. Empty values are left out.
 
+**Price explainer** (only on `GET /api/v1/listings/{id}/`, build E8):
+
+```json
+"price_explainer": {
+  "recent_sales": {
+    "grade": "excellent", "days": 365, "count": 3,
+    "low": {"amount": 1310000, "currency": "USD"},
+    "high": {"amount": 1540000, "currency": "USD"},
+    "median": {"amount": 1450000, "currency": "USD"},
+    "sales": [{"sold_on": "2026-11-15", "price": {"amount": 1540000, "currency": "USD"}, "source": "samwab"}]
+  },
+  "adjustments": [{"label": "Complete set", "direction": "add", "amount": {"amount": 30000, "currency": "USD"}}]
+}
+```
+
+- `recent_sales`: comparable sales of the **same design at the same grade** as the
+  piece (a piece with no design: same brand and category), sold in the last
+  `COMPARABLE_SALES_DAYS` days (365), newest first, at most
+  `COMPARABLE_SALES_SHOWN` (10). `low`, `high` and `median` use the sales listed, so
+  they always match the list; with an even count the median is halfway between the
+  two middle prices, rounded half up to the cent. `source` is `samwab`, `auction` or
+  `marketplace`; where staff found the sale (`source_url`) is never sent. `null`
+  when the piece has no grade or nothing matched: the page hides the section.
+- `adjustments`: the staff's own lines, in their order. `amount` is always positive;
+  `direction` (`add` or `subtract`) says which way.
+- How the asking price compares with the median ("1% under") is worked out by the
+  page, which has both numbers.
+
 A piece found not authentic disappears from browse at once, even if its listing
 is still live.
 
@@ -1100,6 +1136,9 @@ is still live.
 - **Withdraw** (action): takes it off sale for good. To sell it again, draft a new
   listing. The piece and where it ships from cannot change after drafting, for the
   same reason.
+- **Price explainer: adjustments**, on an open listing's page: label, add or
+  subtract, amount in cents, order. Locked once the listing is closed. Every row
+  added, changed or deleted is an audit event (`listings.listingpriceadjustment.*`).
 - Listings are never deleted. Every draft, publish, price change and withdrawal is
   an audit event.
 
@@ -1359,7 +1398,7 @@ On your own machine, only `DJANGO_SECRET_KEY` is needed.
 The README is updated in every build.
 
 
-Last build: E7a, custody steps in the admin.
+Last build: E8, the price explainer.
 
 ## Build history
 
@@ -1391,6 +1430,7 @@ One line per build, newest last. Each build is one feature, merged into `dev`.
 | 06 | 23 Nov 2026 | Two-step login: allauth.mfa (authenticator app codes and 10 recovery codes, app keys encrypted); required for every staff account before any admin page (set-up page with QR code, code page, 5 wrong codes lock it for 15 minutes); allauth's two-step API endpoints; `mfa_enabled` on `GET /api/v1/me/`; `reset_two_step` command; set-up, recovery-code use and reset audited |
 | E7 | 24 Nov 2026 | Piece page details: every photo in the listing API has `sizes` (`thumb`, `medium`, `zoom`: Cloudinary copies within 400, 1,200 and 2,400 px, `q_auto` and `f_auto`); optional photo `label` and `caption` (staff, in the piece's admin page, audited); `lot_record` rows (maker, model, year, size, grade, then attributes named by the schema `title`); a chance-based encryption test made exact |
 | E7a | 24 Nov 2026 | Custody steps in the admin: on the piece list, **Mark on its way to the vault**, **Received at intake** and **Put in the vault** (superusers and `intake_staff`), through the state machine and the audit log, with plain refusals naming the step needed first; "List a piece for sale" now needs no shell, so it works on the live site |
+| E8 | 25 Nov 2026 | Price explainer: `price_explainer` on `GET /api/v1/listings/{id}/` (recent sales of the same design and grade over 365 days, at most 10, with low, high and median; staff adjustments); the `listing_price_adjustments` table, edited on the listing's admin page and audited; a comparable sale's grade is now one of the five grades (typed grades converted once); the grade list moves to the catalog app |
 
 Builds run in the order the roadmap sets, so numbers can skip: builds 12 to 14 came
 before 06 to 11 to start on what buyers see, then 07, 08, the 08a tidy-up and build 01 (production deploy).
