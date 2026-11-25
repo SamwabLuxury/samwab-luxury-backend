@@ -14,8 +14,20 @@ from apps.platform.core.exceptions import ConflictError
 
 
 class IllegalTransitionError(ConflictError):
+    """A move the state machine does not allow.
+
+    People see the plain ``message``; ``str(error)`` names the move for logs and tests.
+    """
+
     code = "illegal_transition"
-    message = "This status change is not allowed."
+    message = "This can't be done right now. Please refresh the page and try again."
+
+    def __init__(self, move: str = "") -> None:
+        super().__init__()
+        self.move = move
+
+    def __str__(self) -> str:
+        return self.move or self.message
 
 
 class StateMachine:
