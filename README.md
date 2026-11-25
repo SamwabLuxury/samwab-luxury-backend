@@ -1030,6 +1030,11 @@ from what the browser says.**
 - The order shows `item`, `tax` (0 until Stripe Tax), `total`, `amount_due`,
   `pay_by` (the hold) and a `timeline`. The seller sees `seller_share` and
   `commission` instead of `tax` and `amount_due`.
+- `order_number` is `YYMM-NNNN`, such as `2611-0042`: year and month (UTC), then a
+  count that restarts at `0001` every month (after `9999` it grows to five digits).
+  One row per month in `order_number_counters` holds the count; it is locked while
+  an order is placed, so two orders never share a number, and a checkout that fails
+  gives its number back. Orders placed before build E10 keep their `SW-...` numbers.
 
 **What goes wrong, and what happens** (each has a test):
 
@@ -1408,7 +1413,7 @@ On your own machine, only `DJANGO_SECRET_KEY` is needed.
 The README is updated in every build.
 
 
-Last build: E9, delivery by the buyer's own courier only.
+Last build: E10, order numbers like 2611-0042.
 
 ## Build history
 
@@ -1442,6 +1447,7 @@ One line per build, newest last. Each build is one feature, merged into `dev`.
 | E7a | 24 Nov 2026 | Custody steps in the admin: on the piece list, **Mark on its way to the vault**, **Received at intake** and **Put in the vault** (superusers and `intake_staff`), through the state machine and the audit log, with plain refusals naming the step needed first; "List a piece for sale" now needs no shell, so it works on the live site |
 | E8 | 25 Nov 2026 | Price explainer: `price_explainer` on `GET /api/v1/listings/{id}/` (recent sales of the same design and grade over 365 days, at most 10, with low, high and median; staff adjustments); the `listing_price_adjustments` table, edited on the listing's admin page and audited; a comparable sale's grade is now one of the five grades (typed grades converted once); the grade list moves to the catalog app |
 | E9 | 25 Nov 2026 | Delivery by the buyer's own courier only: `POST /api/v1/orders/` answers 422 `delivery_choice_not_available` for `keep_in_vault` (checked in the order service too); `DELIVERY_CHOICES_OFFERED` switches choices on; checkout walkthrough adds an address first |
+| E10 | 25 Nov 2026 | Order numbers `YYMM-NNNN` (`2611-0042`), the count restarting every UTC month: `order_number_counters` (one locked row per month); failed checkouts leave no gaps; older `SW-` numbers kept |
 
 Builds run in the order the roadmap sets, so numbers can skip: builds 12 to 14 came
 before 06 to 11 to start on what buyers see, then 07, 08, the 08a tidy-up and build 01 (production deploy).
