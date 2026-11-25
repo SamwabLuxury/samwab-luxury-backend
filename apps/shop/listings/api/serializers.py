@@ -3,10 +3,13 @@ from typing import Any
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
+from apps.inventory.catalog.enums import SaleSource
 from apps.inventory.pieces.api.serializers import PublicPieceSerializer
 from apps.inventory.pieces.enums import AuthenticationBasis, ConditionGrade, VerificationStatus
 from apps.platform.core.api.money import MoneySerializer
-from apps.shop.listings.models import Listing
+from apps.shop.listings.enums import AdjustmentDirection
+from apps.shop.listings.models import Listing, ListingPriceAdjustment
+from apps.shop.listings.price_explainer import price_explainer
 
 
 class ListingSerializer(serializers.ModelSerializer[Listing]):
@@ -25,7 +28,7 @@ class ListingSerializer(serializers.ModelSerializer[Listing]):
 
     class Meta:
         model = Listing
-        fields = (
+        fields: tuple[str, ...] = (
             "id",
             "piece",
             "fulfilment",
@@ -58,6 +61,55 @@ class ListingSerializer(serializers.ModelSerializer[Listing]):
         if piece.authentication_basis == AuthenticationBasis.BUYER_AUTHENTICATED:
             return "buyer_authenticates"
         return "verification_pending"
+
+
+class SaleSerializer(serializers.Serializer[Any]):
+    sold_on = serializers.DateField()
+    price = MoneySerializer()
+    source = serializers.ChoiceField(  # type: ignore[assignment]  # a field named like Field.source
+        choices=SaleSource.choices, help_text="Where it sold: samwab, auction or marketplace."
+    )
+
+
+class RecentSalesSerializer(serializers.Serializer[Any]):
+    grade = serializers.ChoiceField(choices=ConditionGrade.choices, help_text="The piece's grade.")
+    days = serializers.IntegerField(help_text="How far back the sales go, such as 365.")
+    count = serializers.IntegerField(help_text="How many sales are listed below.")
+    low = MoneySerializer()
+    high = MoneySerializer()
+    median = MoneySerializer()
+    sales = SaleSerializer(many=True, help_text="Newest first.")
+
+
+class PriceAdjustmentSerializer(serializers.ModelSerializer[ListingPriceAdjustment]):
+    direction = serializers.ChoiceField(choices=AdjustmentDirection.choices)
+    amount = MoneySerializer(help_text="Always positive; `direction` says add or subtract.")
+
+    class Meta:
+        model = ListingPriceAdjustment
+        fields = ("label", "direction", "amount")
+
+
+class PriceExplainerSerializer(serializers.Serializer[Any]):
+    recent_sales = RecentSalesSerializer(
+        allow_null=True,
+        help_text="Recent sales of the same design at the same grade. Null when the piece "
+        "has no grade or nothing matched: hide the section.",
+    )
+    adjustments = PriceAdjustmentSerializer(many=True, help_text="Staff lines, in order.")
+
+
+class ListingDetailSerializer(ListingSerializer):
+    """One listing, for its own page: a listing card plus the price explainer."""
+
+    price_explainer = serializers.SerializerMethodField()
+
+    class Meta(ListingSerializer.Meta):
+        fields = (*ListingSerializer.Meta.fields, "price_explainer")
+
+    @extend_schema_field(PriceExplainerSerializer)
+    def get_price_explainer(self, listing: Listing) -> Any:
+        return PriceExplainerSerializer(price_explainer(listing)).data
 
 
 class ListingFilterSerializer(serializers.Serializer[None]):

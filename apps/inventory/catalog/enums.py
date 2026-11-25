@@ -1,6 +1,19 @@
 from django.db import models
 
 
+class ConditionGrade(models.TextChoices):
+    """The five grades (settled with the team, no letters).
+
+    Pieces and comparable sales share them.
+    """
+
+    NEW = "new", "New"
+    EXCELLENT = "excellent", "Excellent"
+    VERY_GOOD = "very_good", "Very good"
+    GOOD = "good", "Good"
+    FAIR = "fair", "Fair"
+
+
 class Department(models.TextChoices):
     """Who a design is made for. Its pieces start with this value."""
 

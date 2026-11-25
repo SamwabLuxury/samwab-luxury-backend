@@ -1,5 +1,8 @@
 from django.db import models
 
+# The grade scale lives in catalog (comparable sales use it too); pieces reuse it.
+from apps.inventory.catalog.enums import ConditionGrade as ConditionGrade
+
 
 class Source(models.TextChoices):
     """Where a piece came from."""
@@ -24,14 +27,6 @@ class AuthenticationBasis(models.TextChoices):
     SAMWAB_CHECKED = "samwab_checked", "Checked by Samwab"
     BRAND_CARD = "brand_card", "Brand card"
     BUYER_AUTHENTICATED = "buyer_authenticated", "Authenticated by the buyer"
-
-
-class ConditionGrade(models.TextChoices):
-    NEW = "new", "New"
-    EXCELLENT = "excellent", "Excellent"
-    VERY_GOOD = "very_good", "Very good"
-    GOOD = "good", "Good"
-    FAIR = "fair", "Fair"
 
 
 class VerificationStatus(models.TextChoices):

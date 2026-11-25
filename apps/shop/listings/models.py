@@ -20,7 +20,13 @@ from apps.inventory.pieces.enums import Source
 from apps.inventory.pieces.models import Piece
 from apps.platform.core.models import BaseModel
 from apps.platform.core.money import DEFAULT_CURRENCY, Money
-from apps.shop.listings.enums import OPEN_STATUSES, AcquisitionSource, Fulfilment, ListingStatus
+from apps.shop.listings.enums import (
+    OPEN_STATUSES,
+    AcquisitionSource,
+    AdjustmentDirection,
+    Fulfilment,
+    ListingStatus,
+)
 
 
 def _known(field: str, choices: type[models.TextChoices], *, blank: bool = False) -> models.Q:
@@ -128,3 +134,49 @@ class ListingPriceChange(BaseModel):
     def __str__(self) -> str:
         currency = self.listing.currency
         return f"{Money(self.old_ask_minor, currency)} → {Money(self.new_ask_minor, currency)}"
+
+
+class ListingPriceAdjustment(BaseModel):
+    """One line of the price explainer that staff write: "Complete set, +$300".
+
+    Shown in ``sort_order`` under the recent sales. Edited on the listing's admin page
+    while the listing is open; every add, change and delete is in the audit log.
+    The amount is always positive; ``direction`` says whether it adds or subtracts.
+    """
+
+    listing = models.ForeignKey(Listing, on_delete=models.CASCADE, related_name="price_adjustments")
+    label = models.CharField(max_length=80, help_text="What it is for, such as Complete set.")
+    direction = models.CharField(max_length=10, choices=AdjustmentDirection.choices)
+    amount_minor = models.PositiveBigIntegerField(
+        verbose_name="amount", help_text="US cents: $300.00 is 30000."
+    )
+    sort_order = models.PositiveSmallIntegerField(default=0, verbose_name="order")
+
+    class Meta:
+        db_table = "listing_price_adjustments"
+        ordering = ("sort_order", "id")
+        verbose_name = "price adjustment"
+        constraints = (
+            models.CheckConstraint(
+                condition=models.Q(amount_minor__gt=0),
+                name="listing_price_adjustments_amount_above_0",
+            ),
+            models.CheckConstraint(
+                condition=_known("direction", AdjustmentDirection),
+                name="listing_price_adjustments_direction_is_known",
+            ),
+        )
+
+    def __str__(self) -> str:
+        sign = "+" if self.direction == AdjustmentDirection.ADD else "-"
+        return f"{self.label} {sign}{self.amount}"
+
+    @property
+    def amount(self) -> Money:
+        return Money(
+            self.amount_minor, self.listing.currency if self.listing_id else DEFAULT_CURRENCY
+        )
+
+    def clean(self) -> None:
+        if self.amount_minor is not None and self.amount_minor < 1:
+            raise ValidationError({"amount_minor": "The amount must be at least 1 cent."})

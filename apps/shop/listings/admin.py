@@ -5,7 +5,8 @@ Its asking price can change while it is open; every change is kept in its price
 history. Withdraw it to take it off sale. Listings are never deleted.
 
 Every save and action goes through ``services``, which check the rules and
-record audit events.
+record audit events. The price explainer's adjustments ("Complete set, +$300") are
+edited in their own table on the listing's page; each row saved is audited too.
 """
 
 from typing import Any
@@ -16,10 +17,11 @@ from django.contrib.admin import ActionLocation
 from django.db.models import QuerySet
 from django.http import HttpRequest
 
+from apps.platform.audit import services as audit
 from apps.platform.core.exceptions import AppError
 from apps.shop.listings import services
 from apps.shop.listings.enums import OPEN_STATUSES
-from apps.shop.listings.models import Listing, ListingPriceChange
+from apps.shop.listings.models import Listing, ListingPriceAdjustment, ListingPriceChange
 from apps.users.accounts.models import User
 
 
@@ -63,6 +65,15 @@ class PriceChangeInline(admin.TabularInline):  # type: ignore[type-arg]
         return False
 
 
+class PriceAdjustmentInline(admin.TabularInline):  # type: ignore[type-arg]
+    """The staff's lines of the price explainer, shown on the piece page in this order."""
+
+    model = ListingPriceAdjustment
+    fields = ("sort_order", "label", "direction", "amount_minor")
+    extra = 0
+    verbose_name_plural = "price explainer: adjustments"
+
+
 @admin.register(Listing)
 class ListingAdmin(admin.ModelAdmin):  # type: ignore[type-arg]
     form = ListingForm
@@ -71,7 +82,7 @@ class ListingAdmin(admin.ModelAdmin):  # type: ignore[type-arg]
     list_select_related = ("piece",)
     search_fields = ("piece__title", "piece__brand__name", "piece__product_model__name")
     autocomplete_fields = ("piece",)
-    inlines = (PriceChangeInline,)
+    inlines = (PriceChangeInline, PriceAdjustmentInline)
     actions = ("publish_selected", "withdraw_selected")
 
     @admin.display(description="asking price", ordering="ask_minor")
@@ -109,6 +120,9 @@ class ListingAdmin(admin.ModelAdmin):  # type: ignore[type-arg]
             services.change_ask(obj, ask_minor=form.cleaned_data["ask_minor"], by=_staff(request))
         else:
             services.create_listing(obj, by=_staff(request))
+
+    def save_formset(self, request: HttpRequest, form: Any, formset: Any, change: bool) -> None:
+        audit.save_inline_rows(formset, by=_staff(request))
 
     def _each(
         self, request: HttpRequest, queryset: QuerySet[Listing], step: Any, done: str

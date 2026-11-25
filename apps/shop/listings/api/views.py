@@ -7,7 +7,11 @@ from rest_framework.permissions import AllowAny
 
 from apps.platform.core.api.pagination import ordered_by
 from apps.shop.listings import selectors
-from apps.shop.listings.api.serializers import ListingFilterSerializer, ListingSerializer
+from apps.shop.listings.api.serializers import (
+    ListingDetailSerializer,
+    ListingFilterSerializer,
+    ListingSerializer,
+)
 from apps.shop.listings.models import Listing
 
 
@@ -39,7 +43,9 @@ class ListingListView(ListAPIView):  # type: ignore[type-arg]
 @extend_schema_view(
     get=extend_schema(
         summary="Get a listing",
-        description="One live listing. Drafts, withdrawn listings and unknown ids are 404.",
+        description="One live listing, with its `price_explainer`: recent sales of the same "
+        "design at the same grade, and the staff's price adjustments. "
+        "Drafts, withdrawn listings and unknown ids are 404.",
         operation_id="listings_get",
         tags=["Listings"],
         auth=[],
@@ -48,8 +54,8 @@ class ListingListView(ListAPIView):  # type: ignore[type-arg]
 class ListingDetailView(RetrieveAPIView):  # type: ignore[type-arg]
     authentication_classes = ()
     permission_classes = (AllowAny,)
-    serializer_class = ListingSerializer
+    serializer_class = ListingDetailSerializer
     lookup_url_kwarg = "id"
 
     def get_queryset(self) -> QuerySet[Listing]:
-        return selectors.public_listings()
+        return selectors.public_listings().prefetch_related("price_adjustments")

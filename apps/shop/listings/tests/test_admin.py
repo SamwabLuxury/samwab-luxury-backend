@@ -34,7 +34,13 @@ def change_url(listing: Listing) -> str:
 
 def form(**fields: str) -> dict[str, str]:
     """The listing form as the browser sends it, with the empty price history section."""
-    return {"price_changes-TOTAL_FORMS": "0", "price_changes-INITIAL_FORMS": "0", **fields}
+    return {
+        "price_changes-TOTAL_FORMS": "0",
+        "price_changes-INITIAL_FORMS": "0",
+        "price_adjustments-TOTAL_FORMS": "0",
+        "price_adjustments-INITIAL_FORMS": "0",
+        **fields,
+    }
 
 
 def act(client: Client, action: str, *listings: Listing) -> Any:

@@ -150,6 +150,8 @@ def test_from_a_new_piece_to_a_live_listing_without_a_shell(client: Client) -> N
             "ask_minor": "1250000",
             "price_changes-TOTAL_FORMS": "0",
             "price_changes-INITIAL_FORMS": "0",
+            "price_adjustments-TOTAL_FORMS": "0",
+            "price_adjustments-INITIAL_FORMS": "0",
         },
     )
     listing = Listing.objects.get(piece=piece)
