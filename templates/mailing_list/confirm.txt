@@ -1,0 +1,12 @@
+Hello,
+
+Someone (we hope you) asked to join the Samwab list with this address. List
+members see each drop 24 hours before everyone else.
+
+To confirm, open this link within {{ days }} days:
+{{ confirm_url }}
+
+If this was not you, ignore this email and nothing happens.
+
+To stop all Samwab list emails at any time:
+{{ unsubscribe_url }}

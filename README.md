@@ -318,6 +318,28 @@ a different account from the admin (an admin cannot buy the house's own stock).
 To see a decline, confirm with `-d payment_method=pm_card_chargeDeclined` instead:
 the order stays `pending_payment` and the admin shows the reason on its payment.
 
+### Join the mailing list
+
+With `runserver` running, in a second terminal:
+
+```bash
+curl -s -H "Content-Type: application/json" -d '{"email": "you@example.com", "source": "footer"}' \
+  http://127.0.0.1:8000/api/v1/mailing-list/
+```
+
+The answer is `{"status": "check_your_email"}`. The confirmation email is printed in
+the `runserver` terminal. Its links are long, so the terminal shows them broken
+over two lines with a `=` at the end of the first: join the two parts and drop the
+`=` (a mail app does this for you). Take the part after `/mailing-list/confirm/`
+and send it:
+
+```bash
+curl -s -H "Content-Type: application/json" -d '{"token": "<the token>"}' \
+  http://127.0.0.1:8000/api/v1/mailing-list/confirm/
+```
+
+The admin site lists members at `/admin/mailing_list/listmember/` (read-only).
+
 ### Sign up and log in from the command line
 
 The web app does exactly this. Run it in a second terminal while `runserver` is
@@ -627,6 +649,7 @@ apps/                 our code: apps grouped by area; each folder inside a group
   users/              people
     accounts/         the User model, sign-up and login (django-allauth), roles and permissions
     addresses/        delivery addresses, with the name, street and phone encrypted
+    mailing_list/     the mailing list: join, confirm by email, unsubscribe
   inventory/          what Samwab holds
     catalog/          brands, categories, designs, materials, capture protocols, comparable sales
       models/         one file per subject; import models from apps.inventory.catalog.models
@@ -682,6 +705,7 @@ Other files at the top of the repository:
 | `orders` | Orders: a buyer buying one listed piece, paid in full; the 15-minute checkout hold, cancelling, and acting on what the payment provider confirms. |
 | `payments` | The only app that talks to a payment provider. Stripe today, behind an interface so another provider can be added; Stripe webhooks are checked and stored here. |
 | `addresses` | Delivery addresses a person keeps on their account. The name, street lines and phone are encrypted in the database. |
+| `mailing_list` | The mailing list ("Join the list"): members confirmed by email, early access to drops. |
 | `listings` | Listings: a piece offered for sale at an asking price, with its price history. Staff list house stock in the admin site; buyers browse live listings through the public API. |
 | `pieces` | Pieces: one row per physical object Samwab holds, sells or has checked, with its materials, its photos, its custody status (where it is) and its verification status (is it authentic). Staff register pieces in the admin site. |
 | `core` | Shared building blocks: IDs, `BaseModel`, `Money`, policy values, errors, paging, request IDs, the API description and the health endpoint. |
@@ -739,6 +763,9 @@ fail at once and never reach the database.
 | `GET /api/v1/me/saved/` | My saved pieces still for sale, most recently saved first | Yes |
 | `PUT /api/v1/me/saved/{listing_id}/` | Save a piece for later (again: no change) | Yes |
 | `DELETE /api/v1/me/saved/{listing_id}/` | Remove a saved piece (always 204) | Yes |
+| `POST /api/v1/mailing-list/` | Join the mailing list (sends a confirmation email; always 202) | No |
+| `POST /api/v1/mailing-list/confirm/` | Confirm with the token from the email | No |
+| `POST /api/v1/mailing-list/unsubscribe/` | Leave the list with the token from any list email | No |
 | `GET /api/v1/docs/` | A page to browse and try every endpoint | No |
 | `GET /api/v1/schema/` | The OpenAPI file. Import it into Postman. Add `?format=json` for JSON | No |
 
@@ -951,6 +978,32 @@ They never appear in the audit log, and `str(address)` shows only the label and 
 - `manage.py check` reports a missing or malformed key as `core.E001`.
 - Encrypted columns cannot be filtered, searched or sorted on; Django raises
   `FieldError`. Only `__isnull` works.
+
+### Mailing list
+
+"Join the list" (build E12). List members will see each drop 24 hours early
+(drops come in the next build). Table `mailing_list_members`, one row per address.
+
+- `POST /api/v1/mailing-list/` with `email` (and optional `source`, such as
+  `footer`). No login. Sends an email with two links; the address is on the list
+  only after the confirmation link is used (double opt-in). The answer is always
+  202 `{"status": "check_your_email"}`, whatever the address's state, so nobody can
+  use it to see who is on the list. An address already confirmed gets no email;
+  at most one confirmation every 10 minutes per address. If the email cannot be
+  sent, the answer is the same, the error is logged, and the next try sends again.
+- The links open the web app's pages, `MAILING_LIST_CONFIRM_URL` and
+  `MAILING_LIST_UNSUBSCRIBE_URL` (`{FRONTEND_URL}/mailing-list/confirm/<token>` and
+  `.../unsubscribe/<token>`). The page sends the token to
+  `POST /api/v1/mailing-list/confirm/` or `.../unsubscribe/` and gets
+  `{"email", "status"}`. A confirmation link works for `MAILING_LIST_CONFIRM_DAYS`
+  (7) days; an unsubscribe link works for good. Bad, expired or wrong-kind links,
+  and a confirmation link used after unsubscribing, are 400 `invalid_link`.
+- Tokens are signed with `SECRET_KEY` (Django's `signing`, a different salt for each
+  kind), so none is stored. Changing `SECRET_KEY` makes every emailed link invalid.
+- `confirmed_at` records the consent; rows are kept after unsubscribing.
+  The admin list is read-only: people join and leave only through the emails.
+- On the live site, emails still go to the Render log (`DJANGO_EMAIL_TO_LOGS`)
+  until the Resend build.
 
 ### Payments
 
@@ -1430,7 +1483,7 @@ On your own machine, only `DJANGO_SECRET_KEY` is needed.
 The README is updated in every build.
 
 
-Last build: E11, save for later.
+Last build: E12, the mailing list.
 
 ## Build history
 
@@ -1466,6 +1519,7 @@ One line per build, newest last. Each build is one feature, merged into `dev`.
 | E9 | 25 Nov 2026 | Delivery by the buyer's own courier only: `POST /api/v1/orders/` answers 422 `delivery_choice_not_available` for `keep_in_vault` (checked in the order service too); `DELIVERY_CHOICES_OFFERED` switches choices on; checkout walkthrough adds an address first |
 | E10 | 25 Nov 2026 | Order numbers `YYMM-NNNN` (`2611-0042`), the count restarting every UTC month: `order_number_counters` (one locked row per month); failed checkouts leave no gaps; older `SW-` numbers kept |
 | E11 | 25 Nov 2026 | Save for later: `saved_listings` (one row per person and piece); `GET /api/v1/me/saved/`, `PUT` and `DELETE /api/v1/me/saved/{listing_id}/`; only pieces for sale are listed; nothing is held; 200 per account |
+| E12 | 25 Nov 2026 | Mailing list: new app `apps/users/mailing_list`, table `mailing_list_members`; `POST /api/v1/mailing-list/`, `/confirm/`, `/unsubscribe/` (no login); confirmation email with signed links (7 days to confirm, unsubscribe for good); same answer for every address; one email per 10 minutes; read-only admin list |
 
 Builds run in the order the roadmap sets, so numbers can skip: builds 12 to 14 came
 before 06 to 11 to start on what buyers see, then 07, 08, the 08a tidy-up and build 01 (production deploy).
