@@ -21,7 +21,13 @@ from apps.platform.audit import services as audit
 from apps.platform.core.exceptions import AppError
 from apps.shop.listings import services
 from apps.shop.listings.enums import OPEN_STATUSES
-from apps.shop.listings.models import Listing, ListingPriceAdjustment, ListingPriceChange
+from apps.shop.listings.models import (
+    Drop,
+    DropLot,
+    Listing,
+    ListingPriceAdjustment,
+    ListingPriceChange,
+)
 from apps.users.accounts.models import User
 
 
@@ -142,3 +148,67 @@ class ListingAdmin(admin.ModelAdmin):  # type: ignore[type-arg]
     @admin.action(description="Withdraw the selected listings")
     def withdraw_selected(self, request: HttpRequest, queryset: QuerySet[Listing]) -> None:
         self._each(request, queryset, services.withdraw_listing, "Withdrew")
+
+
+class DropLotInline(admin.TabularInline):  # type: ignore[type-arg]
+    """The drop's lots. Locked once its early access has started."""
+
+    model = DropLot
+    fields = ("lot_number", "listing")
+    autocomplete_fields = ("listing",)
+    extra = 0
+
+    def _locked(self, obj: Any) -> bool:
+        return obj is not None and obj.phase() != "upcoming"
+
+    def has_add_permission(self, request: HttpRequest, obj: Any = None) -> bool:
+        return not self._locked(obj) and super().has_add_permission(request, obj)
+
+    def has_change_permission(self, request: HttpRequest, obj: Any = None) -> bool:
+        return not self._locked(obj) and super().has_change_permission(request, obj)
+
+    def has_delete_permission(self, request: HttpRequest, obj: Any = None) -> bool:
+        return not self._locked(obj) and super().has_delete_permission(request, obj)
+
+
+@admin.register(Drop)
+class DropAdmin(admin.ModelAdmin):  # type: ignore[type-arg]
+    """Build a drop: its times and its lots. List members get in DROP_EARLY_HOURS early.
+
+    The lots can change until early access starts. "Email the list" sends one email to
+    every confirmed list member, once per drop.
+    """
+
+    list_display = ("number", "name", "phase_now", "public_at", "closes_at", "announced_at")
+    search_fields = ("name",)
+    fields = ("number", "name", "description", "public_at", "closes_at", "announced_at")
+    readonly_fields = ("announced_at",)
+    inlines = (DropLotInline,)
+    actions = ("email_the_list",)
+
+    @admin.display(description="phase")
+    def phase_now(self, drop: Drop) -> str:
+        return drop.phase()
+
+    def has_delete_permission(self, request: HttpRequest, obj: Any = None) -> bool:
+        return False
+
+    def save_model(self, request: HttpRequest, obj: Any, form: Any, change: bool) -> None:
+        before = None if obj._state.adding else audit.snapshot(Drop.objects.get(pk=obj.pk))
+        obj.full_clean()
+        obj.save()
+        audit.record_saved(obj, before=before, by=_staff(request))
+
+    def save_formset(self, request: HttpRequest, form: Any, formset: Any, change: bool) -> None:
+        audit.save_inline_rows(formset, by=_staff(request))
+
+    @admin.action(description="Email the list about the selected drops")
+    def email_the_list(self, request: HttpRequest, queryset: QuerySet[Drop]) -> None:
+        for drop in queryset:
+            try:
+                sent, failed = services.announce_drop(drop, by=_staff(request))
+            except AppError as error:
+                self.message_user(request, f"{drop}: {error.message}", messages.ERROR)
+                continue
+            note = f" ({failed} could not be sent; see the logs)" if failed else ""
+            self.message_user(request, f"{drop}: emailed {sent} list members{note}.")

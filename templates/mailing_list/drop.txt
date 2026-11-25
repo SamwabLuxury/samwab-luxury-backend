@@ -1,0 +1,13 @@
+Hello,
+
+{{ drop }} opens to everyone on {{ drop.public_at|date:"j F Y, H:i" }} (UTC).
+As a list member you can see and buy its pieces {{ early_hours }} hours earlier,
+from {{ drop.early_at|date:"j F Y, H:i" }} (UTC). Log in with this email address.
+{% if drop.description %}
+{{ drop.description }}
+{% endif %}
+See the drop:
+{{ drop_url }}
+
+To stop all Samwab list emails:
+{{ unsubscribe_url }}

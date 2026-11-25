@@ -9,6 +9,7 @@ needs none of them.
 most one open listing (draft, live or matched) at a time.
 """
 
+from datetime import timedelta
 from typing import Any
 
 from django.conf import settings
@@ -205,3 +206,79 @@ class SavedListing(BaseModel):
 
     def __str__(self) -> str:
         return f"{self.user.email} saved {self.listing}"
+
+
+class Drop(BaseModel):
+    """A dated release of a set of pieces (D46, D51 #5). Buy-now: no bidding.
+
+    Phases, read from the clock (``phase()``): ``upcoming`` until ``early_at``;
+    ``members`` (confirmed mailing-list members only) until ``public_at``; ``open``
+    (everyone) until ``closes_at``; then ``closed``, and unsold lots are in the normal
+    shop. ``early_at`` is ``public_at`` minus ``DROP_EARLY_HOURS``.
+    """
+
+    number = models.PositiveIntegerField(unique=True, help_text="Drop Nº 7 is 7.")
+    name = models.CharField(max_length=120)
+    description = models.TextField(blank=True, max_length=2000)
+    public_at = models.DateTimeField(
+        verbose_name="opens to everyone at",
+        help_text="List members get in DROP_EARLY_HOURS (24) hours before this.",
+    )
+    closes_at = models.DateTimeField(help_text="Unsold lots move to the normal shop then.")
+    announced_at = models.DateTimeField(
+        null=True, blank=True, editable=False, help_text="When the list was emailed."
+    )
+
+    class Meta:
+        db_table = "drops"
+        ordering = ("public_at", "id")
+        constraints = (
+            models.CheckConstraint(
+                condition=models.Q(closes_at__gt=models.F("public_at")),
+                name="drops_close_after_they_open",
+            ),
+        )
+
+    def __str__(self) -> str:
+        return f"Drop {self.number}: {self.name}"
+
+    @property
+    def early_at(self) -> Any:
+        return self.public_at - timedelta(hours=settings.DROP_EARLY_HOURS)
+
+    def phase(self, now: Any = None) -> str:
+        now = now or timezone.now()
+        if now < self.early_at:
+            return "upcoming"
+        if now < self.public_at:
+            return "members"
+        if now < self.closes_at:
+            return "open"
+        return "closed"
+
+    def clean(self) -> None:
+        if self.public_at and self.closes_at and self.closes_at <= self.public_at:
+            raise ValidationError({"closes_at": "A drop must close after it opens."})
+
+
+class DropLot(BaseModel):
+    """One listing in a drop, at its lot number. A listing is in at most one drop."""
+
+    drop = models.ForeignKey(Drop, on_delete=models.PROTECT, related_name="lots")
+    listing = models.OneToOneField(Listing, on_delete=models.PROTECT, related_name="drop_lot")
+    lot_number = models.PositiveSmallIntegerField()
+
+    class Meta:
+        db_table = "drop_lots"
+        ordering = ("lot_number", "id")
+        verbose_name = "lot"
+        constraints = (
+            models.UniqueConstraint(fields=("drop", "lot_number"), name="drop_lots_number_once"),
+        )
+
+    def __str__(self) -> str:
+        return f"Drop {self.drop.number}, lot {self.lot_number}: {self.listing}"
+
+    def clean(self) -> None:
+        if self.listing_id is not None and not self.listing.is_open:
+            raise ValidationError({"listing": "Only a draft or live listing can be a lot."})

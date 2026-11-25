@@ -8,7 +8,7 @@ from apps.inventory.pieces.api.serializers import PublicPieceSerializer
 from apps.inventory.pieces.enums import AuthenticationBasis, ConditionGrade, VerificationStatus
 from apps.platform.core.api.money import MoneySerializer
 from apps.shop.listings.enums import AdjustmentDirection
-from apps.shop.listings.models import Listing, ListingPriceAdjustment
+from apps.shop.listings.models import Drop, Listing, ListingPriceAdjustment
 from apps.shop.listings.price_explainer import price_explainer
 
 
@@ -161,3 +161,58 @@ class SavedSerializer(serializers.Serializer[Any]):
 
     listing_id = serializers.UUIDField()
     saved_at = serializers.DateTimeField(source="created_at")
+
+
+class DropSerializer(serializers.ModelSerializer[Any]):
+    """A drop as the shop shows it. Times are when it opens to list members
+    (``early_access_at``), to everyone (``opens_at``), and when it closes."""
+
+    phase = serializers.SerializerMethodField(
+        help_text="upcoming, members (list members only), open, or closed."
+    )
+    early_access_at = serializers.DateTimeField(source="early_at")
+    opens_at = serializers.DateTimeField(source="public_at")
+    lot_count = serializers.IntegerField(help_text="How many lots it has, sold or not.")
+
+    class Meta:
+        model = Drop
+        fields: tuple[str, ...] = (
+            "number",
+            "name",
+            "description",
+            "phase",
+            "early_access_at",
+            "opens_at",
+            "closes_at",
+            "lot_count",
+        )
+
+    @extend_schema_field(serializers.ChoiceField(choices=["upcoming", "members", "open", "closed"]))
+    def get_phase(self, drop: Any) -> str:
+        return str(drop.phase())
+
+
+class LotSerializer(ListingSerializer):
+    lot_number = serializers.IntegerField(source="drop_lot.lot_number")
+
+    class Meta(ListingSerializer.Meta):
+        fields = (*ListingSerializer.Meta.fields, "lot_number")
+
+
+class DropPageSerializer(DropSerializer):
+    you_have_early_access = serializers.SerializerMethodField(
+        help_text="True for a logged-in, confirmed mailing-list member."
+    )
+    lots = serializers.SerializerMethodField(
+        help_text="The lots the viewer may see now, in lot order (none for a closed drop)."
+    )
+
+    class Meta(DropSerializer.Meta):
+        fields = (*DropSerializer.Meta.fields, "you_have_early_access", "lots")
+
+    def get_you_have_early_access(self, drop: Any) -> bool:
+        return bool(self.context.get("early_access"))
+
+    @extend_schema_field(LotSerializer(many=True))
+    def get_lots(self, drop: Any) -> Any:
+        return LotSerializer(self.context["lots"], many=True).data

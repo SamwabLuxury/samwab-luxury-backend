@@ -318,6 +318,15 @@ a different account from the admin (an admin cannot buy the house's own stock).
 To see a decline, confirm with `-d payment_method=pm_card_chargeDeclined` instead:
 the order stays `pending_payment` and the admin shows the reason on its payment.
 
+### Run a drop
+
+In the admin site, **Drops** > **Add drop**: a number, a name, when it opens to
+everyone and when it closes. Under **Lots**, pick listings (draft or live) and give
+each a lot number. Confirmed mailing-list members see and buy the lots 24 hours
+before it opens. On the drop list, tick it and choose **Email the list about the
+selected drops** to send one email to every confirmed member (once per drop).
+Then open http://127.0.0.1:8000/api/v1/drops/ and `/api/v1/drops/<number>/`.
+
 ### Join the mailing list
 
 With `runserver` running, in a second terminal:
@@ -766,6 +775,8 @@ fail at once and never reach the database.
 | `POST /api/v1/mailing-list/` | Join the mailing list (sends a confirmation email; always 202) | No |
 | `POST /api/v1/mailing-list/confirm/` | Confirm with the token from the email | No |
 | `POST /api/v1/mailing-list/unsubscribe/` | Leave the list with the token from any list email | No |
+| `GET /api/v1/drops/` | Running and coming drops, soonest first, with their `phase` | No |
+| `GET /api/v1/drops/{number}/` | A drop's page and the lots the viewer may see now | No (log in for early access) |
 | `GET /api/v1/docs/` | A page to browse and try every endpoint | No |
 | `GET /api/v1/schema/` | The OpenAPI file. Import it into Postman. Add `?format=json` for JSON | No |
 
@@ -1193,6 +1204,32 @@ owner.
 A piece found not authentic disappears from browse at once, even if its listing
 is still live.
 
+**Drops** (build E13). A drop is a dated release of a set of lots (listings, in
+lot order); it is buy-now, with no bidding. Tables `drops` and `drop_lots` (a listing
+is in at most one drop). Its phase is read from the clock, so nothing has to run
+on a schedule:
+
+| Phase | When | Who sees and buys the lots |
+|---|---|---|
+| `upcoming` | until `early_access_at` | nobody (the drop itself is listed) |
+| `members` | `early_access_at` (`opens_at` minus `DROP_EARLY_HOURS`, 24) to `opens_at` | logged-in, confirmed mailing-list members only |
+| `open` | `opens_at` to `closes_at` | everyone, on the drop's page |
+| `closed` | after `closes_at` | the unsold lots are in the normal shop |
+
+- `GET /api/v1/drops/`: drops not yet closed, soonest first: `number`, `name`,
+  `description`, `phase`, `early_access_at`, `opens_at`, `closes_at`, `lot_count`.
+- `GET /api/v1/drops/{number}/`: the same plus `you_have_early_access` and `lots`:
+  the shop cards (plus `lot_number`) of the lots the viewer may see now, in order.
+  Send the session cookie so a list member gets her early lots.
+- The same rule applies everywhere: `GET /api/v1/listings/` leaves out the lots of
+  any drop that has not closed; `GET /api/v1/listings/{id}/` is 404 for a lot the
+  viewer may not see yet; saving it is 404; buying it is 422 `drop_not_open`.
+- In the admin site (**Drops**): lots can change until early access starts, then
+  they are locked. Drops are never deleted. **Email the list about the selected
+  drops** emails every confirmed member once per drop (`announced_at`), each with
+  its own unsubscribe link; a failed send is logged and counted, the rest still go.
+  Every change and the email are in the audit log.
+
 **Save for later** (login required, build E11): saved to the account
 (`saved_listings`), so the list is the same on every device.
 
@@ -1483,7 +1520,7 @@ On your own machine, only `DJANGO_SECRET_KEY` is needed.
 The README is updated in every build.
 
 
-Last build: E12, the mailing list.
+Last build: E13, drops.
 
 ## Build history
 
@@ -1520,6 +1557,7 @@ One line per build, newest last. Each build is one feature, merged into `dev`.
 | E10 | 25 Nov 2026 | Order numbers `YYMM-NNNN` (`2611-0042`), the count restarting every UTC month: `order_number_counters` (one locked row per month); failed checkouts leave no gaps; older `SW-` numbers kept |
 | E11 | 25 Nov 2026 | Save for later: `saved_listings` (one row per person and piece); `GET /api/v1/me/saved/`, `PUT` and `DELETE /api/v1/me/saved/{listing_id}/`; only pieces for sale are listed; nothing is held; 200 per account |
 | E12 | 25 Nov 2026 | Mailing list: new app `apps/users/mailing_list`, table `mailing_list_members`; `POST /api/v1/mailing-list/`, `/confirm/`, `/unsubscribe/` (no login); confirmation email with signed links (7 days to confirm, unsubscribe for good); same answer for every address; one email per 10 minutes; read-only admin list |
+| E13 | 25 Nov 2026 | Drops: `drops` and `drop_lots`; phases from the clock (members 24 hours early, then everyone, then unsold lots join the shop); `GET /api/v1/drops/` and `/{number}/`; the same rule in the shop, the listing page, saving and checkout (`drop_not_open`); drop admin with locked lots once early access starts; one email to the list per drop |
 
 Builds run in the order the roadmap sets, so numbers can skip: builds 12 to 14 came
 before 06 to 11 to start on what buyers see, then 07, 08, the 08a tidy-up and build 01 (production deploy).
