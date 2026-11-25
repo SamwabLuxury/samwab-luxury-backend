@@ -17,15 +17,17 @@ from apps.platform.core.exceptions import NotFoundError
 from apps.shop.listings import selectors
 from apps.shop.listings.enums import Fulfilment, ListingStatus
 from apps.shop.listings.exceptions import (
+    DropAlreadyAnnouncedError,
     ListingClosedError,
     ListingHeldError,
     ListingNotReadyError,
     PieceAlreadyListedError,
     SavedLimitReachedError,
 )
-from apps.shop.listings.models import Listing, ListingPriceChange, SavedListing
+from apps.shop.listings.models import Drop, Listing, ListingPriceChange, SavedListing
 from apps.shop.listings.state import LISTING
 from apps.users.accounts.models import User
+from apps.users.mailing_list import services as mailing_list
 
 
 @transaction.atomic
@@ -133,13 +135,13 @@ def change_ask(listing: Listing, *, ask_minor: int, by: User) -> Listing:
 def save_listing(user: User, listing_id: UUID) -> SavedListing:
     """Save a piece for later. Saving one already saved returns the first save.
 
-    Only a piece for sale in the shop can be saved (anything else is 404, as in the
-    shop). At most ``MAX_SAVED_LISTINGS`` per account. Nothing is held.
+    Only a piece this person may open can be saved (anything else is 404, as on the
+    listing page). At most ``MAX_SAVED_LISTINGS`` per account. Nothing is held.
     """
     found = SavedListing.objects.filter(user=user, listing_id=listing_id).first()
     if found is not None:
         return found
-    if not selectors.public_listings().filter(pk=listing_id).exists():
+    if not selectors.visible_listings(user).filter(pk=listing_id).exists():
         raise NotFoundError()
     if SavedListing.objects.filter(user=user).count() >= settings.MAX_SAVED_LISTINGS:
         raise SavedLimitReachedError()
@@ -153,3 +155,25 @@ def save_listing(user: User, listing_id: UUID) -> SavedListing:
 def unsave_listing(user: User, listing_id: UUID) -> None:
     """Remove a piece from the saved list. Removing one not saved does nothing."""
     SavedListing.objects.filter(user=user, listing_id=listing_id).delete()
+
+
+def announce_drop(drop: Drop, *, by: User) -> tuple[int, int]:
+    """Email every confirmed list member about a drop, once. Returns (sent, failed)."""
+    with transaction.atomic():
+        current = Drop.objects.select_for_update().get(pk=drop.pk)
+        if current.announced_at is not None:
+            raise DropAlreadyAnnouncedError()
+        current.announced_at = timezone.now()
+        current.save(update_fields=["announced_at", "updated_at"])
+    sent, failed = mailing_list.email_members(
+        f"{current.name}: list members get in early",
+        "mailing_list/drop.txt",
+        {
+            "drop": current,
+            "drop_url": settings.DROP_PAGE_URL.format(number=current.number),
+            "early_hours": settings.DROP_EARLY_HOURS,
+        },
+    )
+    audit.record("announced", current, by=by, changes={"sent": sent, "failed": failed})
+    drop.announced_at = current.announced_at
+    return sent, failed

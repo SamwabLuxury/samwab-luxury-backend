@@ -94,3 +94,27 @@ def unsubscribe(token: str) -> ListMember:
             member.unsubscribed_at = timezone.now()
             member.save(update_fields=["status", "unsubscribed_at", "updated_at"])
     return member
+
+
+def email_members(subject: str, template: str, context: dict[str, object]) -> tuple[int, int]:
+    """One email to each confirmed member, each with its own unsubscribe link.
+
+    Returns (sent, failed). A failure is logged and the others still go.
+    """
+    sent = failed = 0
+    emails = ListMember.objects.filter(status=MemberStatus.CONFIRMED).values_list(
+        "email", flat=True
+    )
+    for email in emails.iterator():
+        unsubscribe_url = settings.MAILING_LIST_UNSUBSCRIBE_URL.format(
+            token=tokens.unsubscribe_token(email)
+        )
+        body = render_to_string(template, {**context, "unsubscribe_url": unsubscribe_url})
+        try:
+            send_mail(subject, body, settings.DEFAULT_FROM_EMAIL, [email])
+        except Exception:
+            logger.exception("mailing list: could not send %r", subject)
+            failed += 1
+        else:
+            sent += 1
+    return sent, failed

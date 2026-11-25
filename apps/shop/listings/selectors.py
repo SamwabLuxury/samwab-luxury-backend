@@ -3,13 +3,16 @@
 The public sees live listings only, and never a piece found not authentic.
 """
 
-from django.db.models import Max, OuterRef, Prefetch, Q, QuerySet, Subquery
+from typing import Any
+
+from django.db.models import Count, Max, OuterRef, Prefetch, Q, QuerySet, Subquery
 from django.db.models.functions import Now
 
 from apps.inventory.pieces.enums import ConditionGrade, VerificationStatus
 from apps.inventory.pieces.models import Media
+from apps.shop.listings import drops
 from apps.shop.listings.enums import ListingStatus
-from apps.shop.listings.models import Listing, SavedListing
+from apps.shop.listings.models import Drop, Listing, SavedListing
 from apps.users.accounts.models import User
 
 # Best first, as in the data model.
@@ -77,10 +80,44 @@ def public_listings(
 def saved_listings(user: User) -> QuerySet[Listing]:
     """The pieces a person saved that are still for sale, each with ``saved_at``.
 
-    Built on ``public_listings``, so a sold, withdrawn or not-authentic piece is left
-    out, exactly as in the shop.
+    Built on ``visible_listings``, so a sold, withdrawn or not-authentic piece, or a
+    drop lot she may not see yet, is left out, exactly as on the listing page.
     """
     saved_at = SavedListing.objects.filter(user=user, listing=OuterRef("pk")).values("created_at")[
         :1
     ]
-    return public_listings().annotate(saved_at=Subquery(saved_at)).filter(saved_at__isnull=False)
+    return (
+        visible_listings(user).annotate(saved_at=Subquery(saved_at)).filter(saved_at__isnull=False)
+    )
+
+
+def shop_listings(**filters: Any) -> QuerySet[Listing]:
+    """The normal shop: live listings not in a running drop (closed drops' lots are)."""
+    return public_listings(**filters).filter(drops.in_normal_shop())
+
+
+def visible_listings(viewer: User | None) -> QuerySet[Listing]:
+    """Live listings this person may open, drop lots included when their time has come."""
+    return public_listings().filter(drops.visible_to(viewer))
+
+
+def drops_with_counts() -> QuerySet[Drop]:
+    return Drop.objects.annotate(lot_count=Count("lots"))
+
+
+def running_drops() -> QuerySet[Drop]:
+    """Drops not yet closed, soonest first, with how many lots each has."""
+    return drops_with_counts().filter(closes_at__gt=Now()).order_by("public_at", "id")
+
+
+def drop_lots(drop: Drop, viewer: User | None) -> QuerySet[Listing]:
+    """The lots of a drop that this person may see now, in lot order. A closed drop
+    shows none: its unsold lots are in the normal shop."""
+    if drop.phase() == "closed":
+        return Listing.objects.none()
+    return (
+        visible_listings(viewer)
+        .filter(drop_lot__drop=drop)
+        .select_related("drop_lot")
+        .order_by("drop_lot__lot_number")
+    )

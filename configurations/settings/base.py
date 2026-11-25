@@ -175,6 +175,7 @@ HEADLESS_FRONTEND_URLS = {
 MAILING_LIST_CONFIRM_URL = f"{FRONTEND_URL}/mailing-list/confirm/{{token}}"
 MAILING_LIST_UNSUBSCRIBE_URL = f"{FRONTEND_URL}/mailing-list/unsubscribe/{{token}}"
 MAILING_LIST_CONFIRM_DAYS = 7
+DROP_PAGE_URL = f"{FRONTEND_URL}/drops/{{number}}"
 
 # ---------- Email ----------
 # Django 6.1 sends email through MAILERS. Servers use SMTP with these variables;
@@ -243,6 +244,10 @@ DELIVERY_CHOICES_OFFERED = ["buyer_courier"]
 
 # Save for later (apps/shop/listings, build E11): the most pieces one account may save.
 MAX_SAVED_LISTINGS = 200
+
+# Drops (build E13): confirmed mailing-list members see and buy a drop this many hours
+# before everyone else.
+DROP_EARLY_HOURS = 24
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 

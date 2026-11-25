@@ -26,3 +26,8 @@ class ListingHeldError(ConflictError):
 class SavedLimitReachedError(AppError):
     code = "saved_limit_reached"
     message = "Your saved list is full. Remove a piece to save another."
+
+
+class DropAlreadyAnnouncedError(AppError):
+    code = "drop_already_announced"
+    message = "The list has already been emailed about this drop."

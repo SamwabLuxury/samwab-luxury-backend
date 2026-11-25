@@ -19,6 +19,7 @@ from apps.money.payments.models import Payment
 from apps.platform.audit import services as audit
 from apps.platform.core import policy
 from apps.platform.core.exceptions import NotFoundError
+from apps.shop.listings import drops
 from apps.shop.listings import services as listings
 from apps.shop.listings.enums import ListingStatus
 from apps.shop.listings.models import Listing
@@ -26,6 +27,7 @@ from apps.shop.orders.enums import CancelReason, Channel, OrderKind, OrderStatus
 from apps.shop.orders.exceptions import (
     CannotBuyOwnListingError,
     DeliveryChoiceNotAvailableError,
+    DropNotOpenError,
     ListingUnavailableError,
     OrderAlreadyPaidError,
     OrderNotCancellableError,
@@ -78,6 +80,8 @@ def create_order(
             raise ListingUnavailableError()
         if listing.seller_id == buyer.pk:
             raise CannotBuyOwnListingError()
+        if not drops.open_to(listing, buyer):
+            raise DropNotOpenError()
         item = listing.ask_minor
         order = Order(
             kind=OrderKind.HOUSE_SALE,
