@@ -145,3 +145,19 @@ class ListingFilterSerializer(serializers.Serializer[None]):
             "condition_min": data.get("condition_min", ""),
             "price_max": data.get("price_max"),
         }
+
+
+class SavedCardSerializer(ListingSerializer):
+    """A saved piece: the shop card plus when it was saved."""
+
+    saved_at = serializers.DateTimeField(read_only=True)
+
+    class Meta(ListingSerializer.Meta):
+        fields = (*ListingSerializer.Meta.fields, "saved_at")
+
+
+class SavedSerializer(serializers.Serializer[Any]):
+    """The answer to saving a piece."""
+
+    listing_id = serializers.UUIDField()
+    saved_at = serializers.DateTimeField(source="created_at")

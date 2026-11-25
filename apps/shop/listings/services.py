@@ -5,19 +5,25 @@ members acting at once cannot both publish or withdraw. Every write records an
 audit event in the same transaction.
 """
 
+from uuid import UUID
+
+from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from apps.inventory.pieces.enums import CustodyStatus, MediaKind, VerificationStatus
 from apps.platform.audit import services as audit
+from apps.platform.core.exceptions import NotFoundError
+from apps.shop.listings import selectors
 from apps.shop.listings.enums import Fulfilment, ListingStatus
 from apps.shop.listings.exceptions import (
     ListingClosedError,
     ListingHeldError,
     ListingNotReadyError,
     PieceAlreadyListedError,
+    SavedLimitReachedError,
 )
-from apps.shop.listings.models import Listing, ListingPriceChange
+from apps.shop.listings.models import Listing, ListingPriceChange, SavedListing
 from apps.shop.listings.state import LISTING
 from apps.users.accounts.models import User
 
@@ -122,3 +128,28 @@ def change_ask(listing: Listing, *, ask_minor: int, by: User) -> Listing:
     audit.record_saved(current, before=before, by=by)
     listing.ask_minor = ask_minor
     return current
+
+
+def save_listing(user: User, listing_id: UUID) -> SavedListing:
+    """Save a piece for later. Saving one already saved returns the first save.
+
+    Only a piece for sale in the shop can be saved (anything else is 404, as in the
+    shop). At most ``MAX_SAVED_LISTINGS`` per account. Nothing is held.
+    """
+    found = SavedListing.objects.filter(user=user, listing_id=listing_id).first()
+    if found is not None:
+        return found
+    if not selectors.public_listings().filter(pk=listing_id).exists():
+        raise NotFoundError()
+    if SavedListing.objects.filter(user=user).count() >= settings.MAX_SAVED_LISTINGS:
+        raise SavedLimitReachedError()
+    try:
+        with transaction.atomic():
+            return SavedListing.objects.create(user=user, listing_id=listing_id)
+    except IntegrityError:  # the same person saved it from two devices at once
+        return SavedListing.objects.get(user=user, listing_id=listing_id)
+
+
+def unsave_listing(user: User, listing_id: UUID) -> None:
+    """Remove a piece from the saved list. Removing one not saved does nothing."""
+    SavedListing.objects.filter(user=user, listing_id=listing_id).delete()
