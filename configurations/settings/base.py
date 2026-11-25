@@ -231,6 +231,10 @@ PHOTO_SIZES = {"thumb": 400, "medium": 1200, "zoom": 2400}
 COMPARABLE_SALES_DAYS = 365
 COMPARABLE_SALES_SHOWN = 10
 
+# Delivery choices a buyer may pick at checkout (apps/shop/orders, D49 option A).
+# For now only the buyer's own courier; add "keep_in_vault" here to switch it on.
+DELIVERY_CHOICES_OFFERED = ["buyer_courier"]
+
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # The API speaks JSON only, and every endpoint needs a logged-in user

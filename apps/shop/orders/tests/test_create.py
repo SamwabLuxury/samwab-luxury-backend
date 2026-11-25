@@ -11,6 +11,7 @@ from apps.shop.listings.models import Listing
 from apps.shop.listings.tests.helpers import make_admin, make_listing
 from apps.shop.orders.models import Order
 from apps.shop.orders.tests.helpers import address_of, buyer, live_listing, post_order
+from apps.users.addresses.models import Address
 from apps.users.addresses.tests.helpers import make_address
 
 pytestmark = pytest.mark.django_db
@@ -22,11 +23,14 @@ def ada_client(client: Client) -> Client:
     return client
 
 
-def body(listing: Listing, **fields: Any) -> dict[str, Any]:
+def body(listing: Listing, *, who: str = "ada@example.com", **fields: Any) -> dict[str, Any]:
+    """The checkout form: the buyer's own courier collects it, at one of her addresses."""
+    address = Address.objects.filter(user__email=who).first() or make_address(buyer(who))
     return {
         "listing_id": str(listing.pk),
         "payment_option": "pay_in_full",
-        "delivery_choice": "keep_in_vault",
+        "delivery_choice": "buyer_courier",
+        "shipping_address_id": str(address.pk),
         **fields,
     }
 
@@ -98,7 +102,7 @@ def test_a_second_order_for_the_same_piece_is_refused(client: Client) -> None:
     post_order(client, body(listing), key="a")
     client.force_login(buyer("chidi@example.com"))
 
-    response = post_order(client, body(listing), key="b")
+    response = post_order(client, body(listing, who="chidi@example.com"), key="b")
 
     assert response.status_code == 409
     assert response.json()["code"] == "listing_unavailable"
@@ -138,7 +142,7 @@ def test_staff_cannot_buy_their_own_house_stock(client: Client) -> None:
     listing = live_listing()
     client.force_login(listing.seller)
 
-    response = post_order(client, body(listing))
+    response = post_order(client, body(listing, who=listing.seller.email))
 
     assert response.status_code == 422
     assert response.json()["code"] == "cannot_buy_own_listing"
@@ -147,11 +151,13 @@ def test_staff_cannot_buy_their_own_house_stock(client: Client) -> None:
 def test_courier_delivery_needs_one_of_my_addresses(ada_client: Client) -> None:
     listing = live_listing()
 
-    missing = post_order(ada_client, body(listing, delivery_choice="buyer_courier"), key="1")
+    without = body(listing)
+    del without["shipping_address_id"]
+    missing = post_order(ada_client, without, key="1")
     someone_elses = make_address(buyer("chidi@example.com"))
     theirs = post_order(
         ada_client,
-        body(listing, delivery_choice="buyer_courier", shipping_address_id=str(someone_elses.pk)),
+        body(listing, shipping_address_id=str(someone_elses.pk)),
         key="2",
     )
 
@@ -167,7 +173,7 @@ def test_the_delivery_address_is_copied_onto_the_order_encrypted(ada_client: Cli
     address = address_of(get_buyer())
     response = post_order(
         ada_client,
-        body(live_listing(), delivery_choice="buyer_courier", shipping_address_id=str(address.pk)),
+        body(live_listing(), shipping_address_id=str(address.pk)),
     )
 
     assert response.status_code == 201, response.content
