@@ -79,10 +79,19 @@ STORAGES = {
 }
 
 # ---------- Email ----------
-# Until an email service is chosen, DJANGO_EMAIL_TO_LOGS=true writes every email
-# (such as sign-up codes) to Render's logs instead of sending it. Demo only.
-EMAIL_TO_LOGS = env.bool("DJANGO_EMAIL_TO_LOGS", default=False)
-if EMAIL_TO_LOGS:
+# With RESEND_API_KEY set, every email goes through Resend's HTTPS API (build E14;
+# Render's free plan blocks SMTP ports). Without it, DJANGO_EMAIL_TO_LOGS=true writes
+# every email (such as sign-up codes) to Render's logs instead. Demo only.
+RESEND_API_KEY = env("RESEND_API_KEY", default="")
+EMAIL_TO_LOGS = env.bool("DJANGO_EMAIL_TO_LOGS", default=False) and not RESEND_API_KEY
+if RESEND_API_KEY:
+    MAILERS = {
+        "default": {
+            "BACKEND": "apps.platform.core.mail.ResendEmailBackend",
+            "OPTIONS": {"api_key": RESEND_API_KEY},
+        }
+    }
+elif EMAIL_TO_LOGS:
     MAILERS = {"default": {"BACKEND": "django.core.mail.backends.console.EmailBackend"}}
 
 # ---------- HTTPS ----------

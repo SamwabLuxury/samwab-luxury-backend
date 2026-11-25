@@ -23,6 +23,7 @@ def load(monkeypatch: pytest.MonkeyPatch) -> Iterator[Load]:
         "DJANGO_ALLOWED_HOSTS",
         "DJANGO_CSRF_TRUSTED_ORIGINS",
         "DJANGO_EMAIL_TO_LOGS",
+        "RESEND_API_KEY",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -218,3 +219,13 @@ def test_production_keeps_photos_on_cloudinary_in_the_live_folder(load: Load) ->
     folder = production.PHOTO_FOLDER
     assert storages["default"]["BACKEND"] == "apps.platform.core.storage.CloudinaryStorage"
     assert folder == "samwab/live"
+
+
+def test_with_a_resend_key_production_sends_through_resend(load: Load) -> None:
+    settings = load(DATABASE_URL=POOLED, RESEND_API_KEY="re_made_up", DJANGO_EMAIL_TO_LOGS="true")
+
+    assert settings.MAILERS["default"] == {
+        "BACKEND": "apps.platform.core.mail.ResendEmailBackend",
+        "OPTIONS": {"api_key": "re_made_up"},
+    }
+    assert settings.SILENCED_SYSTEM_CHECKS == ["security.W021"]  # nothing to silence
