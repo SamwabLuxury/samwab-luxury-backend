@@ -225,6 +225,12 @@ PHOTO_MAX_BYTES = 20 * 1024 * 1024
 # the "Look closer" viewer. Only on Cloudinary; elsewhere each is the photo itself.
 PHOTO_SIZES = {"thumb": 400, "medium": 1200, "zoom": 2400}
 
+# The piece page's "recent sales" (apps/shop/listings/price_explainer.py, build E8):
+# comparable sales of the same design and grade from the last COMPARABLE_SALES_DAYS
+# days, newest first, at most COMPARABLE_SALES_SHOWN of them.
+COMPARABLE_SALES_DAYS = 365
+COMPARABLE_SALES_SHOWN = 10
+
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # The API speaks JSON only, and every endpoint needs a logged-in user
@@ -252,6 +258,10 @@ SPECTACULAR_SETTINGS: dict[str, Any] = {
     "ENUM_NAME_OVERRIDES": {
         "OrderStatusEnum": "apps.shop.orders.enums.OrderStatus",
         "ListingStatusEnum": "apps.shop.listings.enums.ListingStatus",
+        # One grade list for pieces, filters and the price explainer (build E8).
+        "ConditionGradeEnum": "apps.inventory.catalog.enums.ConditionGrade",
+        "SaleSourceEnum": "apps.inventory.catalog.enums.SaleSource",
+        "AdjustmentDirectionEnum": "apps.shop.listings.enums.AdjustmentDirection",
     },
     "SERVE_INCLUDE_SCHEMA": False,
     # Anyone can read the API description for now. Reviewed in the security build.

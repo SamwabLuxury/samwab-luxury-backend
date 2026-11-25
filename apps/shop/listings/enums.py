@@ -33,3 +33,10 @@ class AcquisitionSource(models.TextChoices):
     EVENT = "event", "Event"
     MARKETPLACE = "marketplace", "Marketplace"
     OTHER = "other", "Other"
+
+
+class AdjustmentDirection(models.TextChoices):
+    """Whether a staff price adjustment raises or lowers the price it explains."""
+
+    ADD = "add", "Add (+)"
+    SUBTRACT = "subtract", "Subtract (-)"
