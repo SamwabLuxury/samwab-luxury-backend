@@ -193,6 +193,9 @@ MAILERS = {
     },
 }
 DEFAULT_FROM_EMAIL = env("DJANGO_DEFAULT_FROM_EMAIL", default="Samwab <no-reply@samwab.local>")
+# Resend's API key (build E14). In Render and .env only, never in Git. On the live
+# site it switches sending to Resend (production.py); `check_email` uses it anywhere.
+RESEND_API_KEY = env("RESEND_API_KEY", default="")
 
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},

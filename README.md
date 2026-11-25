@@ -180,6 +180,29 @@ On your machine:
    data removed: on Cloudinary if your `.env` has `CLOUDINARY_URL` (folder
    `samwab/local`), otherwise in the `media/pieces/` folder.
 
+### Send email through Resend
+
+Emails (sign-up codes, password resets, mailing-list emails) go through Resend's
+HTTPS API. Render's free plan blocks the usual email (SMTP) ports, so SMTP is not
+used there.
+
+1. In Resend, **Domains** > **Add Domain**: add Samwab's domain and put the DNS
+   records it shows at the domain's DNS provider. Wait until Resend says
+   **Verified**. Until then Resend sends only to your own address.
+2. **API Keys** > **Create API Key** with sending access. Copy it once.
+3. On your machine, put in `.env` (never in Git or chat):
+   `RESEND_API_KEY=re_...` and
+   `DJANGO_DEFAULT_FROM_EMAIL="Samwab <no-reply@your-verified-domain>"`.
+4. Run `python manage.py check_email you@example.com`. It sends one test email and
+   says `Email is working`; if Resend refuses, it shows Resend's reason (a wrong
+   key, or a sending address not on the verified domain).
+5. In Render, **Environment**: add the same two variables and remove
+   `DJANGO_EMAIL_TO_LOGS`. After the deploy, sign up with a new address on the web
+   app (or join the mailing list) and check the inbox.
+
+On your machine, emails from the app itself still print in the `runserver`
+terminal (local settings); only `check_email` uses Resend there.
+
 ### Check the Cloudinary keys
 
 1. In the Cloudinary console, open **Settings → API Keys** and copy the
@@ -1444,7 +1467,9 @@ Branches). Render builds and starts the new version a few minutes later.
 | `DATABASE_URL` | Neon's **pooled** connection string (the host contains `-pooler`): the running app uses it |
 | `DIRECT_DATABASE_URL` | Neon's **direct** connection string (no `-pooler`): only migrations use it |
 | `WEB_CONCURRENCY` | `2` (Gunicorn's number of workers) |
-| `DJANGO_EMAIL_TO_LOGS` | `true` until an email service is chosen: emails, such as sign-up codes, are written to Render's **Logs** instead of sent. Remove it and set the `DJANGO_EMAIL_*` variables when the email service exists |
+| `RESEND_API_KEY` | From Resend: **API Keys** > **Create API Key** (sending access). Every email then goes through Resend; remove `DJANGO_EMAIL_TO_LOGS` |
+| `DJANGO_DEFAULT_FROM_EMAIL` | `Samwab <no-reply@your-verified-domain>`: an address on the domain verified in Resend |
+| `DJANGO_EMAIL_TO_LOGS` | `true` until an email service is chosen: emails, such as sign-up codes, are written to Render's **Logs** instead of sent. Not needed once `RESEND_API_KEY` is set (it is then ignored) |
 | `DJANGO_FRONTEND_URL` | The web app's address, when it has one |
 
 **Stripe webhook** (once, in the Stripe sandbox): **Developers** → **Webhooks** →
@@ -1506,10 +1531,11 @@ Servers use `configurations.settings.production` (or `staging`).
 | `DIRECT_DATABASE_URL` | Render's build command | Neon's direct string, used only by `migrate` |
 | `DJANGO_ALLOWED_HOSTS` | optional | Extra host names the API answers to, comma separated (Render's own is added automatically) |
 | `DJANGO_CSRF_TRUSTED_ORIGINS` | optional | Extra addresses allowed to send forms, comma separated (Render's own is added automatically) |
-| `DJANGO_EMAIL_TO_LOGS` | production, until an email service exists | `true` writes emails to the logs instead of sending them |
+| `RESEND_API_KEY` | production; optional on your machine | Resend's API key (`re_...`). On the live site every email then goes through Resend. Never in Git or chat |
+| `DJANGO_EMAIL_TO_LOGS` | production, only while there is no `RESEND_API_KEY` | `true` writes emails to the logs instead of sending them; ignored once `RESEND_API_KEY` is set |
 | `DJANGO_FRONTEND_URL` | staging, production | The web app's address, used for links in emails. Default `http://localhost:3000` |
-| `DJANGO_DEFAULT_FROM_EMAIL` | staging, production | Sender of every email, such as `Samwab <no-reply@samwab.com>` |
-| `DJANGO_EMAIL_HOST`, `DJANGO_EMAIL_PORT`, `DJANGO_EMAIL_USER`, `DJANGO_EMAIL_PASSWORD`, `DJANGO_EMAIL_USE_TLS` | staging, production | The email provider's SMTP details. Port defaults to 587 and TLS to on |
+| `DJANGO_DEFAULT_FROM_EMAIL` | staging, production | Sender of every email, such as `Samwab <no-reply@samwabluxury.com>`. Must be on the domain verified in Resend |
+| `DJANGO_EMAIL_HOST`, `DJANGO_EMAIL_PORT`, `DJANGO_EMAIL_USER`, `DJANGO_EMAIL_PASSWORD`, `DJANGO_EMAIL_USE_TLS` | not used on Render | SMTP details, only for a host that allows SMTP. Render's free plan blocks SMTP ports, so the live site uses `RESEND_API_KEY` |
 | `RENDER_EXTERNAL_HOSTNAME`, `PORT`, `WEB_CONCURRENCY` | Render | Set by Render (the last by you): the public host name, the port Gunicorn listens on, the number of workers |
 
 Secrets never go into Git. `.env` is ignored, and `.env.example` lists every variable.
@@ -1520,7 +1546,7 @@ On your own machine, only `DJANGO_SECRET_KEY` is needed.
 The README is updated in every build.
 
 
-Last build: E13, drops.
+Last build: E14, email through Resend.
 
 ## Build history
 
@@ -1558,6 +1584,7 @@ One line per build, newest last. Each build is one feature, merged into `dev`.
 | E11 | 25 Nov 2026 | Save for later: `saved_listings` (one row per person and piece); `GET /api/v1/me/saved/`, `PUT` and `DELETE /api/v1/me/saved/{listing_id}/`; only pieces for sale are listed; nothing is held; 200 per account |
 | E12 | 25 Nov 2026 | Mailing list: new app `apps/users/mailing_list`, table `mailing_list_members`; `POST /api/v1/mailing-list/`, `/confirm/`, `/unsubscribe/` (no login); confirmation email with signed links (7 days to confirm, unsubscribe for good); same answer for every address; one email per 10 minutes; read-only admin list |
 | E13 | 25 Nov 2026 | Drops: `drops` and `drop_lots`; phases from the clock (members 24 hours early, then everyone, then unsold lots join the shop); `GET /api/v1/drops/` and `/{number}/`; the same rule in the shop, the listing page, saving and checkout (`drop_not_open`); drop admin with locked lots once early access starts; one email to the list per drop |
+| E14 | 25 Nov 2026 | Email through Resend's HTTPS API (Render's free plan blocks SMTP): `apps.platform.core.mail.ResendEmailBackend` (standard library only; one retry on 429/500/503; attachments refused for now); production uses it when `RESEND_API_KEY` is set; `check_email` command |
 
 Builds run in the order the roadmap sets, so numbers can skip: builds 12 to 14 came
 before 06 to 11 to start on what buyers see, then 07, 08, the 08a tidy-up and build 01 (production deploy).
