@@ -735,7 +735,10 @@ fail at once and never reach the database.
 | `POST /api/v1/orders/{id}/cancel/` | Cancel before paying | Yes |
 | `POST /webhooks/stripe/` | Stripe sends payment events here (checked by signature) | No (Stripe's signature) |
 | `GET /api/v1/listings/` | Live listings, newest first. Filters: `q`, `brand`, `category`, `condition_min`, `price_max` | No |
-| `GET /api/v1/listings/{id}/` | One live listing | No |
+| `GET /api/v1/listings/{id}/` | One live listing, with its price explainer | No |
+| `GET /api/v1/me/saved/` | My saved pieces still for sale, most recently saved first | Yes |
+| `PUT /api/v1/me/saved/{listing_id}/` | Save a piece for later (again: no change) | Yes |
+| `DELETE /api/v1/me/saved/{listing_id}/` | Remove a saved piece (always 204) | Yes |
 | `GET /api/v1/docs/` | A page to browse and try every endpoint | No |
 | `GET /api/v1/schema/` | The OpenAPI file. Import it into Postman. Add `?format=json` for JSON | No |
 
@@ -1137,6 +1140,20 @@ owner.
 A piece found not authentic disappears from browse at once, even if its listing
 is still live.
 
+**Save for later** (login required, build E11): saved to the account
+(`saved_listings`), so the list is the same on every device.
+
+- `PUT /api/v1/me/saved/{listing_id}/` saves a piece that is for sale and answers
+  `{"listing_id", "saved_at"}`. Saving it again changes nothing (same `saved_at`),
+  so the heart button can simply send PUT. 404 if it is not for sale.
+  At most `MAX_SAVED_LISTINGS` (200) per account: 422 `saved_limit_reached`.
+- `DELETE /api/v1/me/saved/{listing_id}/` removes it; always 204.
+- `GET /api/v1/me/saved/`: the saved pieces still for sale, as shop cards plus
+  `saved_at`, most recently saved first, paged with `cursor`. A sold, withdrawn or
+  not-authentic piece drops off by itself.
+- Saving holds nothing: anyone can still buy the piece. The 15-minute hold starts
+  only at checkout.
+
 **In the admin site** (`/admin/listings/listing/`, superusers only for now):
 
 - **Draft**: pick the piece, choose where it ships from (from the vault, or from
@@ -1413,7 +1430,7 @@ On your own machine, only `DJANGO_SECRET_KEY` is needed.
 The README is updated in every build.
 
 
-Last build: E10, order numbers like 2611-0042.
+Last build: E11, save for later.
 
 ## Build history
 
@@ -1448,6 +1465,7 @@ One line per build, newest last. Each build is one feature, merged into `dev`.
 | E8 | 25 Nov 2026 | Price explainer: `price_explainer` on `GET /api/v1/listings/{id}/` (recent sales of the same design and grade over 365 days, at most 10, with low, high and median; staff adjustments); the `listing_price_adjustments` table, edited on the listing's admin page and audited; a comparable sale's grade is now one of the five grades (typed grades converted once); the grade list moves to the catalog app |
 | E9 | 25 Nov 2026 | Delivery by the buyer's own courier only: `POST /api/v1/orders/` answers 422 `delivery_choice_not_available` for `keep_in_vault` (checked in the order service too); `DELIVERY_CHOICES_OFFERED` switches choices on; checkout walkthrough adds an address first |
 | E10 | 25 Nov 2026 | Order numbers `YYMM-NNNN` (`2611-0042`), the count restarting every UTC month: `order_number_counters` (one locked row per month); failed checkouts leave no gaps; older `SW-` numbers kept |
+| E11 | 25 Nov 2026 | Save for later: `saved_listings` (one row per person and piece); `GET /api/v1/me/saved/`, `PUT` and `DELETE /api/v1/me/saved/{listing_id}/`; only pieces for sale are listed; nothing is held; 200 per account |
 
 Builds run in the order the roadmap sets, so numbers can skip: builds 12 to 14 came
 before 06 to 11 to start on what buyers see, then 07, 08, the 08a tidy-up and build 01 (production deploy).
