@@ -235,6 +235,9 @@ COMPARABLE_SALES_SHOWN = 10
 # For now only the buyer's own courier; add "keep_in_vault" here to switch it on.
 DELIVERY_CHOICES_OFFERED = ["buyer_courier"]
 
+# Save for later (apps/shop/listings, build E11): the most pieces one account may save.
+MAX_SAVED_LISTINGS = 200
+
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # The API speaks JSON only, and every endpoint needs a logged-in user

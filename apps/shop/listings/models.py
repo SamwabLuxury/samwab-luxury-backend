@@ -180,3 +180,28 @@ class ListingPriceAdjustment(BaseModel):
     def clean(self) -> None:
         if self.amount_minor is not None and self.amount_minor < 1:
             raise ValidationError({"amount_minor": "The amount must be at least 1 cent."})
+
+
+class SavedListing(BaseModel):
+    """A piece a buyer saved for later. On her account, so it is on every device.
+
+    Saving holds nothing: anyone can still buy the piece. The saved list shows only
+    listings still for sale, so a sold or withdrawn piece drops off by itself; the
+    row stays until she removes it. ``created_at`` is when she saved it.
+    """
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="saved_listings"
+    )
+    listing = models.ForeignKey(Listing, on_delete=models.CASCADE, related_name="saved_by")
+
+    class Meta:
+        db_table = "saved_listings"
+        ordering = ("-id",)
+        verbose_name = "saved listing"
+        constraints = (
+            models.UniqueConstraint(fields=("user", "listing"), name="saved_listings_once"),
+        )
+
+    def __str__(self) -> str:
+        return f"{self.user.email} saved {self.listing}"

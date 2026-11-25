@@ -3,13 +3,14 @@
 The public sees live listings only, and never a piece found not authentic.
 """
 
-from django.db.models import Max, Prefetch, Q, QuerySet
+from django.db.models import Max, OuterRef, Prefetch, Q, QuerySet, Subquery
 from django.db.models.functions import Now
 
 from apps.inventory.pieces.enums import ConditionGrade, VerificationStatus
 from apps.inventory.pieces.models import Media
 from apps.shop.listings.enums import ListingStatus
-from apps.shop.listings.models import Listing
+from apps.shop.listings.models import Listing, SavedListing
+from apps.users.accounts.models import User
 
 # Best first, as in the data model.
 GRADES_BEST_FIRST = (
@@ -71,3 +72,15 @@ def public_listings(
             | Q(piece__product_model__name__icontains=word)
         )
     return listings
+
+
+def saved_listings(user: User) -> QuerySet[Listing]:
+    """The pieces a person saved that are still for sale, each with ``saved_at``.
+
+    Built on ``public_listings``, so a sold, withdrawn or not-authentic piece is left
+    out, exactly as in the shop.
+    """
+    saved_at = SavedListing.objects.filter(user=user, listing=OuterRef("pk")).values("created_at")[
+        :1
+    ]
+    return public_listings().annotate(saved_at=Subquery(saved_at)).filter(saved_at__isnull=False)

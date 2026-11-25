@@ -21,3 +21,8 @@ class ListingClosedError(ConflictError):
 class ListingHeldError(ConflictError):
     code = "listing_held"
     message = "A buyer is paying for this piece right now. Try again after their 15-minute hold."
+
+
+class SavedLimitReachedError(AppError):
+    code = "saved_limit_reached"
+    message = "Your saved list is full. Remove a piece to save another."
