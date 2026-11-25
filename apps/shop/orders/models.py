@@ -84,3 +84,21 @@ class Order(BaseModel):
 
     def money(self, minor: int) -> Money:
         return Money(minor, self.currency)
+
+
+class OrderNumberCounter(models.Model):
+    """How many order numbers a month has given out: one row per month ("2611").
+
+    Only ``apps/shop/orders/numbers.py`` writes it, with the row locked, so two orders
+    never share a number. Rows are never deleted.
+    """
+
+    month = models.CharField(max_length=4, primary_key=True, help_text="YYMM, in UTC.")
+    last = models.PositiveIntegerField(default=0, help_text="The last count given out.")
+
+    class Meta:
+        db_table = "order_number_counters"
+        verbose_name = "order number counter"
+
+    def __str__(self) -> str:
+        return f"{self.month}: {self.last}"

@@ -31,6 +31,7 @@ from apps.shop.orders.exceptions import (
     OrderNotCancellableError,
 )
 from apps.shop.orders.models import Order
+from apps.shop.orders.numbers import next_order_number
 from apps.shop.orders.state import ORDER
 from apps.users.accounts.models import User
 from apps.users.addresses.models import Address
@@ -95,7 +96,7 @@ def create_order(
             shipping_address=_address_text(shipping_address) if shipping_address else None,
             hold_until=timezone.now() + policy.CHECKOUT_HOLD,
         )
-        order.order_number = f"SW-{order.pk.hex[-8:].upper()}"
+        order.order_number = next_order_number(timezone.now())
         order.save()
         _, client_secret = payments.start_payment(
             order=order,

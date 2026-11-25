@@ -47,7 +47,7 @@ def test_an_order_returns_the_payment_step_from_the_contract(ada_client: Client)
     assert order["kind"] == "house_sale"
     assert order["channel"] == "buy_now"
     assert order["listing_id"] == str(listing.pk)
-    assert order["order_number"].startswith("SW-")
+    assert order["order_number"].endswith("-0001")  # YYMM-NNNN
     assert (
         order["item"]
         == order["total"]
