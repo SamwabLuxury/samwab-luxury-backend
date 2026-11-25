@@ -63,7 +63,9 @@ class OrderListView(ListAPIView):  # type: ignore[type-arg]
         description="Pay in full: returns the order and a Stripe PaymentIntent to confirm in "
         "the browser. The piece is held for 15 minutes (`pay_by`); the order is paid only "
         "when Stripe confirms it. 409 `listing_unavailable` if it is sold, withdrawn or "
-        "another buyer is paying; 422 `reservation_not_available` for `reserve`; 502 "
+        "another buyer is paying; 422 `reservation_not_available` for `reserve`; 422 "
+        "`delivery_choice_not_available` for a delivery choice not offered yet (for now "
+        "only `buyer_courier`, with `shipping_address_id`); 502 "
         "`payment_provider_error` if Stripe cannot be reached (nothing is saved).",
         operation_id="orders_create",
         tags=["Orders"],

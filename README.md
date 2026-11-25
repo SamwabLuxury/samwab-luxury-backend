@@ -287,11 +287,18 @@ a different account from the admin (an admin cannot buy the house's own stock).
 1. Sign up and log in a buyer with the commands in the next section, "Sign up and
    log in from the command line" (steps 1 to 3). Keep that terminal: `API`,
    `TOKEN` and `cookies.txt` are used below.
-2. Copy a listing's `id` from `curl -s $API/api/v1/listings/`, then buy it:
+2. Give the buyer an address for her courier, and copy its `id` from the answer:
+   ```bash
+   curl -s -b cookies.txt -H "X-CSRFToken: $TOKEN" -H "Content-Type: application/json" \
+     -d '{"recipient_name": "Adaeze Obi", "line1": "12 Admiralty Way", "city": "Lagos", "region": "Lagos", "postal_code": "106104", "country": "NG"}' \
+     $API/api/v1/me/addresses/
+   ```
+   Copy a listing's `id` from `curl -s $API/api/v1/listings/`, then buy it (for now
+   the buyer's own courier is the only delivery choice):
    ```bash
    curl -s -b cookies.txt -H "X-CSRFToken: $TOKEN" -H "Idempotency-Key: try-1" \
      -H "Content-Type: application/json" \
-     -d '{"listing_id": "<the listing id>", "payment_option": "pay_in_full", "delivery_choice": "keep_in_vault"}' \
+     -d '{"listing_id": "<the listing id>", "payment_option": "pay_in_full", "delivery_choice": "buyer_courier", "shipping_address_id": "<the address id>"}' \
      $API/api/v1/orders/
    ```
    The answer has the order (`pending_payment`, `pay_by` 15 minutes ahead) and a
@@ -1009,9 +1016,12 @@ from what the browser says.**
 
 - `POST /api/v1/orders/` with an `Idempotency-Key` header and `listing_id`,
   `payment_option` (`pay_in_full`; `reserve` is 422 `reservation_not_available`
-  until reservations exist), `delivery_choice` (`keep_in_vault`, or
-  `buyer_courier` with `shipping_address_id`, one of your addresses; it is copied
-  onto the order, encrypted), optional `acquisition_source` and `known_before`.
+  until reservations exist), `delivery_choice` (for now only `buyer_courier`, the
+  buyer's own courier, with `shipping_address_id`, one of your addresses; it is
+  copied onto the order, encrypted), optional `acquisition_source` and
+  `known_before`. Any other choice, such as `keep_in_vault`, is 422
+  `delivery_choice_not_available` until it is added to `DELIVERY_CHOICES_OFFERED`
+  in `configurations/settings/base.py` (one line).
   Answers 201 with `order` and `payment` (`client_secret` for Stripe Elements in
   the browser). The price comes from the listing; anything else sent is ignored.
 - `GET /api/v1/orders/` (yours as buyer; `?role=seller` for your sales;
@@ -1398,7 +1408,7 @@ On your own machine, only `DJANGO_SECRET_KEY` is needed.
 The README is updated in every build.
 
 
-Last build: E8, the price explainer.
+Last build: E9, delivery by the buyer's own courier only.
 
 ## Build history
 
@@ -1431,6 +1441,7 @@ One line per build, newest last. Each build is one feature, merged into `dev`.
 | E7 | 24 Nov 2026 | Piece page details: every photo in the listing API has `sizes` (`thumb`, `medium`, `zoom`: Cloudinary copies within 400, 1,200 and 2,400 px, `q_auto` and `f_auto`); optional photo `label` and `caption` (staff, in the piece's admin page, audited); `lot_record` rows (maker, model, year, size, grade, then attributes named by the schema `title`); a chance-based encryption test made exact |
 | E7a | 24 Nov 2026 | Custody steps in the admin: on the piece list, **Mark on its way to the vault**, **Received at intake** and **Put in the vault** (superusers and `intake_staff`), through the state machine and the audit log, with plain refusals naming the step needed first; "List a piece for sale" now needs no shell, so it works on the live site |
 | E8 | 25 Nov 2026 | Price explainer: `price_explainer` on `GET /api/v1/listings/{id}/` (recent sales of the same design and grade over 365 days, at most 10, with low, high and median; staff adjustments); the `listing_price_adjustments` table, edited on the listing's admin page and audited; a comparable sale's grade is now one of the five grades (typed grades converted once); the grade list moves to the catalog app |
+| E9 | 25 Nov 2026 | Delivery by the buyer's own courier only: `POST /api/v1/orders/` answers 422 `delivery_choice_not_available` for `keep_in_vault` (checked in the order service too); `DELIVERY_CHOICES_OFFERED` switches choices on; checkout walkthrough adds an address first |
 
 Builds run in the order the roadmap sets, so numbers can skip: builds 12 to 14 came
 before 06 to 11 to start on what buyers see, then 07, 08, the 08a tidy-up and build 01 (production deploy).
