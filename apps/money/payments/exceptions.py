@@ -9,7 +9,10 @@ class PaymentProviderError(AppError):
 
     status_code = 502
     code = "payment_provider_error"
-    message = "The payment service could not complete this. Please try again."
+    message = (
+        "We couldn't reach our payment provider, so nothing was charged. "
+        "Please try again in a moment."
+    )
 
 
 class WebhookSignatureError(AppError):

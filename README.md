@@ -1347,17 +1347,27 @@ Every error has the same shape, with the content type `application/problem+json`
   "title": "Bad Request",
   "status": 400,
   "code": "validation_error",
-  "detail": "One or more fields are invalid.",
+  "detail": "Some details need another look. Please check the highlighted fields.",
   "instance": "/api/v1/me/",
   "errors": [
-    {"field": "address.city", "code": "required", "message": "This field is required."}
+    {"field": "address.city", "code": "required", "message": "Please fill this in."}
   ],
   "request_id": "0193a1b2c3d47e5f8a1b2c3d4e5f6a7b"
 }
 ```
 
 - `code` never changes for a given error, so the front end decides what to do from `code`.
-- `detail` and `message` are written for people and may be reworded.
+- `detail` and each field's `message` are written for shoppers and can be shown as
+  they are (build E15): short, polite, no technical words. They may be reworded.
+  The words live in `apps/platform/core/api/plain_words.py` (general messages and
+  field messages) and on each error class (`message`); allauth's login messages
+  are set in `apps/users/accounts/adapter.py` and `mfa_adapter.py`. A test
+  (`test_plain_words.py`) checks every error class in the project against a list of
+  technical words, so a new error with developer wording fails the build.
+- Field messages: the framework's own ("This field is required.", "Must be a valid
+  UUID.") become ours ("Please fill this in.", "This doesn't look right. Please
+  check it."); a message we wrote for people (such as "A drop must close after it
+  opens.") is kept.
 - `instance` is the path of the request that failed.
 - `errors` appears only when single fields are wrong. `field` is `null` when the
   problem is with the request as a whole. Items in a list show their position: `lines.1.price`.
@@ -1546,7 +1556,7 @@ On your own machine, only `DJANGO_SECRET_KEY` is needed.
 The README is updated in every build.
 
 
-Last build: E14, email through Resend.
+Last build: E15, error messages people can read.
 
 ## Build history
 
@@ -1585,6 +1595,7 @@ One line per build, newest last. Each build is one feature, merged into `dev`.
 | E12 | 25 Nov 2026 | Mailing list: new app `apps/users/mailing_list`, table `mailing_list_members`; `POST /api/v1/mailing-list/`, `/confirm/`, `/unsubscribe/` (no login); confirmation email with signed links (7 days to confirm, unsubscribe for good); same answer for every address; one email per 10 minutes; read-only admin list |
 | E13 | 25 Nov 2026 | Drops: `drops` and `drop_lots`; phases from the clock (members 24 hours early, then everyone, then unsold lots join the shop); `GET /api/v1/drops/` and `/{number}/`; the same rule in the shop, the listing page, saving and checkout (`drop_not_open`); drop admin with locked lots once early access starts; one email to the list per drop |
 | E14 | 25 Nov 2026 | Email through Resend's HTTPS API (Render's free plan blocks SMTP): `apps.platform.core.mail.ResendEmailBackend` (standard library only; one retry on 429/500/503; attachments refused for now); production uses it when `RESEND_API_KEY` is set; `check_email` command |
+| E15 | 25 Nov 2026 | Error messages people can read: every `detail` and field `message` rewritten for shoppers (codes unchanged); `plain_words.py`; allauth login and two-step messages; a test checks every error class for technical words |
 
 Builds run in the order the roadmap sets, so numbers can skip: builds 12 to 14 came
 before 06 to 11 to start on what buyers see, then 07, 08, the 08a tidy-up and build 01 (production deploy).

@@ -8,21 +8,21 @@ from apps.platform.core.exceptions import AppError, ConflictError
 class IdempotencyKeyMissingError(AppError):
     status_code = 400
     code = "idempotency_key_missing"
-    message = "This request needs an Idempotency-Key header: a new random value, such as a UUID."
+    message = "Something went wrong sending your order. Please refresh the page and try again."
 
 
 class IdempotencyKeyInvalidError(AppError):
     status_code = 400
     code = "idempotency_key_invalid"
-    message = "The Idempotency-Key must be 1 to 255 letters, digits or symbols, with no spaces."
+    message = "Something went wrong sending your order. Please refresh the page and try again."
 
 
 class IdempotencyKeyReusedError(AppError):
     status_code = 422
     code = "idempotency_key_reused"
-    message = "This Idempotency-Key was already used for a different request. Send a new key."
+    message = "Something went wrong sending your order. Please refresh the page and try again."
 
 
 class IdempotencyKeyInProgressError(ConflictError):
     code = "idempotency_key_in_progress"
-    message = "A request with this Idempotency-Key is still running. Try again in a moment."
+    message = "We're still working on your last step. Please wait a moment."

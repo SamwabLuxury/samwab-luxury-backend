@@ -7,7 +7,7 @@ Each app adds its own errors by extending these, for example::
 
     class BidTooLow(AppError):
         code = "bid_too_low"
-        message = "The bid is below the lowest amount allowed."
+        message = "Your bid is below the lowest amount allowed."
 """
 
 
@@ -16,7 +16,7 @@ class AppError(Exception):
 
     status_code = 422
     code = "error"
-    message = "The request could not be completed."
+    message = "Something went wrong. Please try again."
 
     def __init__(self, message: str | None = None, *, code: str | None = None) -> None:
         if message is not None:
@@ -31,7 +31,7 @@ class NotFoundError(AppError):
 
     status_code = 404
     code = "not_found"
-    message = "Not found."
+    message = "We couldn't find what you were looking for."
 
 
 class PermissionDeniedError(AppError):
@@ -39,7 +39,7 @@ class PermissionDeniedError(AppError):
 
     status_code = 403
     code = "permission_denied"
-    message = "You do not have permission to do this."
+    message = "Sorry, you don't have access to this."
 
 
 class ConflictError(AppError):
@@ -47,4 +47,4 @@ class ConflictError(AppError):
 
     status_code = 409
     code = "conflict"
-    message = "The request conflicts with the current state."
+    message = "This can't be done right now. Please refresh the page and try again."
