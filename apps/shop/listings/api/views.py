@@ -119,4 +119,4 @@ class ListingDetailView(RetrieveAPIView):  # type: ignore[type-arg]
 
     def get_queryset(self) -> QuerySet[Listing]:
         viewer = self.request.user if self.request.user.is_authenticated else None
-        return selectors.visible_listings(viewer).prefetch_related("price_adjustments")
+        return selectors.listing_pages(viewer).prefetch_related("price_adjustments")

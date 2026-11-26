@@ -794,7 +794,7 @@ fail at once and never reach the database.
 | `POST /webhooks/stripe/` | Stripe sends payment events here (checked by signature) | No (Stripe's signature) |
 | `GET /api/v1/listings/` | Live listings, newest first, with `count`. Filters: `q`, `brand`, `category`, `condition_min`, `price_max` | No |
 | `GET /api/v1/listings/facets/` | The total and a count per house and per category, for the same filters | No |
-| `GET /api/v1/listings/{id}/` | One live listing, with its price explainer | No |
+| `GET /api/v1/listings/{id}/` | One live listing with its price explainer, or a sold one (`status: "sold"`, `sold_at`) | No |
 | `GET /api/v1/me/saved/` | My saved pieces still for sale, most recently saved first | Yes |
 | `PUT /api/v1/me/saved/{listing_id}/` | Save a piece for later (again: no change) | Yes |
 | `DELETE /api/v1/me/saved/{listing_id}/` | Remove a saved piece (always 204) | Yes |
@@ -1189,6 +1189,11 @@ with the owner onboarding builds.
   Try it: `curl "http://127.0.0.1:8000/api/v1/listings/facets/?category=bags"`.
 - `GET /api/v1/listings/{id}/`: one live listing, with its `price_explainer`
   (below). Drafts, withdrawn listings and unknown ids are 404.
+  **A sold piece keeps its page** (build E19): it answers `status: "sold"` with
+  `sold_at` (when its order was paid) and `price_explainer: null`, so a shared link or
+  an order confirmation still opens it. It is not offered anywhere else: the shop list,
+  the counts, saved pieces, drop pages and checkout see live pieces only. A sold lot
+  follows its drop's rule (list members only in the early hours).
 
 Each listing has `id`, `piece` (the public view: title, description, brand,
 category, design, size, year, attributes, condition, statuses, `media` and
@@ -1612,7 +1617,7 @@ On your own machine, only `DJANGO_SECRET_KEY` is needed.
 The README is updated in every build.
 
 
-Last build: E18, shop totals and filter counts.
+Last build: E19, a sold piece keeps its page.
 
 ## Build history
 
@@ -1655,6 +1660,7 @@ One line per build, newest last. Each build is one feature, merged into `dev`.
 | E16 | 26 Nov 2026 | An admin site for shop staff: django-unfold look; home page with today's numbers and task buttons by role; menu grouped by task, each role seeing its own screens; roles for listings, drops, orders, payments and the mailing list (`intake_staff`, `catalog_editor`, `support`, `finance`); every action needs a permission; prices typed and shown in dollars; plain screen names (label-only migrations); money written `$12,500.00` for people; `check_email` blames the network, not the key, on a timeout |
 | E17 | 26 Nov 2026 | The admin in the shop's own colours: Figma palette (espresso, cream, sand, gold) in `UNFOLD["COLORS"]`, always light, the "S" mark, serif headings; the action menu readable on dark-mode computers; pieces section named "Stock" |
 | E18 | 26 Nov 2026 | Shop totals and filter counts: `count` on every page of `GET /api/v1/listings/`; `GET /api/v1/listings/facets/` (total, houses, top categories, each leaving out its own filter); one filter helper for the list, the count and the facets; counted cursor paging |
+| E19 | 26 Nov 2026 | A sold piece keeps its page: `GET /api/v1/listings/{id}/` answers sold listings (`status: "sold"`, `sold_at`, no price explainer) instead of 404; `listings.sold_at` set when an order sells it (migration `listings.0006`, filled in for pieces already sold from their paid order); everything that offers a piece still sees live ones only |
 
 Builds run in the order the roadmap sets, so numbers can skip: builds 12 to 14 came
 before 06 to 11 to start on what buyers see, then 07, 08, the 08a tidy-up and build 01 (production deploy).

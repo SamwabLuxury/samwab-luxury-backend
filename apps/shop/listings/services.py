@@ -80,10 +80,13 @@ def _move(listing: Listing, to: str, *, verb: str, by: User | None) -> Listing:
         if missing:
             raise ListingNotReadyError(" ".join(missing))
         current.published_at = timezone.now()
+    if to == ListingStatus.SOLD:
+        current.sold_at = timezone.now()
     current.status = to
-    current.save(update_fields=["status", "published_at", "updated_at"])
+    current.save(update_fields=["status", "published_at", "sold_at", "updated_at"])
     audit.record(verb, current, by=by, changes={"status": {"from": was, "to": to}})
     listing.status, listing.published_at = current.status, current.published_at
+    listing.sold_at = current.sold_at
     return current
 
 

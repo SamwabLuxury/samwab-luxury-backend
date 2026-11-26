@@ -38,6 +38,7 @@ def public_listings(
     category_slug: str = "",
     condition_min: str = "",
     price_max: int | None = None,
+    include_sold: bool = False,
 ) -> QuerySet[Listing]:
     """Live listings with their piece, catalog rows and photos, for browse and detail pages.
 
@@ -51,6 +52,7 @@ def public_listings(
             category_slug=category_slug,
             condition_min=condition_min,
             price_max=price_max,
+            include_sold=include_sold,
         )
         .select_related("piece__brand", "piece__category", "piece__product_model")
         .prefetch_related(
@@ -74,10 +76,13 @@ def _matching(
     category_slug: str = "",
     condition_min: str = "",
     price_max: int | None = None,
+    include_sold: bool = False,
 ) -> QuerySet[Listing]:
-    """The one place the shop's filters are applied: live, not found not authentic,
-    and matching every filter given. Plain rows, so counting them stays cheap."""
-    listings = Listing.objects.filter(status=ListingStatus.LIVE).exclude(
+    """The one place the shop's filters are applied: live (and sold, for the piece page
+    only), not found not authentic, and matching every filter given. Plain rows, so
+    counting them stays cheap."""
+    statuses = [ListingStatus.LIVE, ListingStatus.SOLD] if include_sold else [ListingStatus.LIVE]
+    listings = Listing.objects.filter(status__in=statuses).exclude(
         piece__verification_status=VerificationStatus.NOT_AUTHENTIC
     )
     if brand_slug:
@@ -175,6 +180,13 @@ def shop_facets(**filters: Any) -> dict[str, Any]:
 def visible_listings(viewer: User | None) -> QuerySet[Listing]:
     """Live listings this person may open, drop lots included when their time has come."""
     return public_listings().filter(drops.visible_to(viewer))
+
+
+def listing_pages(viewer: User | None) -> QuerySet[Listing]:
+    """The piece pages this person may open: live ones, and sold ones so a sold piece
+    keeps its page (E19). Only the piece page uses this; everything that offers a piece
+    (shop, counts, saving, drops, checkout) still sees live listings only."""
+    return public_listings(include_sold=True).filter(drops.visible_to(viewer))
 
 
 def drops_with_counts() -> QuerySet[Drop]:
