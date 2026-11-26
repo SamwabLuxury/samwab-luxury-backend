@@ -792,7 +792,8 @@ fail at once and never reach the database.
 | `GET /api/v1/orders/{id}/` | One of my orders | Yes |
 | `POST /api/v1/orders/{id}/cancel/` | Cancel before paying | Yes |
 | `POST /webhooks/stripe/` | Stripe sends payment events here (checked by signature) | No (Stripe's signature) |
-| `GET /api/v1/listings/` | Live listings, newest first. Filters: `q`, `brand`, `category`, `condition_min`, `price_max` | No |
+| `GET /api/v1/listings/` | Live listings, newest first, with `count`. Filters: `q`, `brand`, `category`, `condition_min`, `price_max` | No |
+| `GET /api/v1/listings/facets/` | The total and a count per house and per category, for the same filters | No |
 | `GET /api/v1/listings/{id}/` | One live listing, with its price explainer | No |
 | `GET /api/v1/me/saved/` | My saved pieces still for sale, most recently saved first | Yes |
 | `PUT /api/v1/me/saved/{listing_id}/` | Save a piece for later (again: no change) | Yes |
@@ -1176,6 +1177,16 @@ with the owner onboarding builds.
 
   An unknown slug gives an empty list; a bad value (`?condition_min=mint`,
   `?price_max=-1`) gives 400 `validation_error` naming the field.
+  Every page also carries `count`: how many pieces match the filters across all
+  pages (build E18), for "1,284 pieces" and "Show 4 more · 1,280 left".
+- `GET /api/v1/listings/facets/` (build E18): the shop's filter counts, with the same
+  filters as the list. It answers `total`, plus `brands` and `categories`, each a list
+  of `{slug, name, count}` sorted by name. A house's count leaves out the `brand`
+  filter (and a category's the `category` filter), so the "Find a house" list keeps
+  every house while one is chosen. Sub-categories count in their top category.
+  Houses and categories with nothing for sale are left out. For a no-results
+  suggestion such as "See Hermès at any price", call it again without `price_max`.
+  Try it: `curl "http://127.0.0.1:8000/api/v1/listings/facets/?category=bags"`.
 - `GET /api/v1/listings/{id}/`: one live listing, with its `price_explainer`
   (below). Drafts, withdrawn listings and unknown ids are 404.
 
@@ -1601,7 +1612,7 @@ On your own machine, only `DJANGO_SECRET_KEY` is needed.
 The README is updated in every build.
 
 
-Last build: E17, the admin in the shop's own colours.
+Last build: E18, shop totals and filter counts.
 
 ## Build history
 
@@ -1643,6 +1654,7 @@ One line per build, newest last. Each build is one feature, merged into `dev`.
 | E15 | 25 Nov 2026 | Error messages people can read: every `detail` and field `message` rewritten for shoppers (codes unchanged); `plain_words.py`; allauth login and two-step messages; a test checks every error class for technical words |
 | E16 | 26 Nov 2026 | An admin site for shop staff: django-unfold look; home page with today's numbers and task buttons by role; menu grouped by task, each role seeing its own screens; roles for listings, drops, orders, payments and the mailing list (`intake_staff`, `catalog_editor`, `support`, `finance`); every action needs a permission; prices typed and shown in dollars; plain screen names (label-only migrations); money written `$12,500.00` for people; `check_email` blames the network, not the key, on a timeout |
 | E17 | 26 Nov 2026 | The admin in the shop's own colours: Figma palette (espresso, cream, sand, gold) in `UNFOLD["COLORS"]`, always light, the "S" mark, serif headings; the action menu readable on dark-mode computers; pieces section named "Stock" |
+| E18 | 26 Nov 2026 | Shop totals and filter counts: `count` on every page of `GET /api/v1/listings/`; `GET /api/v1/listings/facets/` (total, houses, top categories, each leaving out its own filter); one filter helper for the list, the count and the facets; counted cursor paging |
 
 Builds run in the order the roadmap sets, so numbers can skip: builds 12 to 14 came
 before 06 to 11 to start on what buyers see, then 07, 08, the 08a tidy-up and build 01 (production deploy).
