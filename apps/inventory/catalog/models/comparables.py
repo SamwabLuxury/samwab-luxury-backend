@@ -48,6 +48,7 @@ class ComparableSale(BaseModel):
 
     class Meta:
         db_table = "comparable_sales"
+        verbose_name = "past sale"  # a sale elsewhere, kept to guide prices (admin, E16)
         ordering = ("-sold_on", "-id")
         indexes = (
             models.Index(fields=("product_model", "-sold_on"), name="comparables_design_idx"),

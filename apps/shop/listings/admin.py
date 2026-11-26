@@ -18,6 +18,8 @@ from django.db.models import QuerySet
 from django.http import HttpRequest
 
 from apps.platform.audit import services as audit
+from apps.platform.core.admin_dollars import DollarsAdmin
+from apps.platform.core.admin_look import ModelAdmin, TabularInline
 from apps.platform.core.exceptions import AppError
 from apps.shop.listings import services
 from apps.shop.listings.enums import OPEN_STATUSES
@@ -52,7 +54,7 @@ class ListingForm(forms.ModelForm):  # type: ignore[type-arg]
         return data
 
 
-class PriceChangeInline(admin.TabularInline):  # type: ignore[type-arg]
+class PriceChangeInline(TabularInline):  # type: ignore[type-arg]
     model = ListingPriceChange
     fields = ("changed_at", "change", "changed_by")
     readonly_fields = fields
@@ -71,18 +73,20 @@ class PriceChangeInline(admin.TabularInline):  # type: ignore[type-arg]
         return False
 
 
-class PriceAdjustmentInline(admin.TabularInline):  # type: ignore[type-arg]
+class PriceAdjustmentInline(DollarsAdmin, TabularInline):  # type: ignore[type-arg]
     """The staff's lines of the price explainer, shown on the piece page in this order."""
 
     model = ListingPriceAdjustment
     fields = ("sort_order", "label", "direction", "amount_minor")
+    dollar_fields = (("amount_minor", "Amount"),)
     extra = 0
     verbose_name_plural = "price explainer: adjustments"
 
 
 @admin.register(Listing)
-class ListingAdmin(admin.ModelAdmin):  # type: ignore[type-arg]
+class ListingAdmin(DollarsAdmin, ModelAdmin):  # type: ignore[type-arg]
     form = ListingForm
+    dollar_fields = (("ask_minor", "Asking price"),)
     list_display = ("piece", "price", "fulfilment", "status", "published_at")
     list_filter = ("status", "fulfilment")
     list_select_related = ("piece",)
@@ -98,13 +102,15 @@ class ListingAdmin(admin.ModelAdmin):  # type: ignore[type-arg]
     def get_fields(self, request: HttpRequest, obj: Any = None) -> Any:
         if obj is None:
             return ("piece", "fulfilment", "ask_minor")
-        return ("piece", "seller", "status", "published_at", "fulfilment", "ask_minor")
+        # The price box when it can change; otherwise the price, read in dollars.
+        price = "ask_minor" if self.has_change_permission(request, obj) else "price"
+        return ("piece", "seller", "status", "published_at", "fulfilment", price)
 
     def get_readonly_fields(self, request: HttpRequest, obj: Any = None) -> Any:
         if obj is None:
             return ()
         # Change the piece or fulfilment by withdrawing and drafting a new listing.
-        return ("piece", "seller", "status", "published_at", "fulfilment")
+        return ("piece", "seller", "status", "published_at", "fulfilment", "price")
 
     def get_actions(
         self, request: HttpRequest, action_location: Any = ActionLocation.CHANGE_LIST
@@ -141,16 +147,16 @@ class ListingAdmin(admin.ModelAdmin):  # type: ignore[type-arg]
             else:
                 self.message_user(request, f"{done} {listing.piece}.")
 
-    @admin.action(description="Publish the selected drafts")
+    @admin.action(description="Publish the selected drafts", permissions=["change"])
     def publish_selected(self, request: HttpRequest, queryset: QuerySet[Listing]) -> None:
         self._each(request, queryset, services.publish_listing, "Published")
 
-    @admin.action(description="Withdraw the selected listings")
+    @admin.action(description="Withdraw the selected listings", permissions=["change"])
     def withdraw_selected(self, request: HttpRequest, queryset: QuerySet[Listing]) -> None:
         self._each(request, queryset, services.withdraw_listing, "Withdrew")
 
 
-class DropLotInline(admin.TabularInline):  # type: ignore[type-arg]
+class DropLotInline(TabularInline):  # type: ignore[type-arg]
     """The drop's lots. Locked once its early access has started."""
 
     model = DropLot
@@ -172,7 +178,7 @@ class DropLotInline(admin.TabularInline):  # type: ignore[type-arg]
 
 
 @admin.register(Drop)
-class DropAdmin(admin.ModelAdmin):  # type: ignore[type-arg]
+class DropAdmin(ModelAdmin):  # type: ignore[type-arg]
     """Build a drop: its times and its lots. List members get in DROP_EARLY_HOURS early.
 
     The lots can change until early access starts. "Email the list" sends one email to
@@ -202,7 +208,7 @@ class DropAdmin(admin.ModelAdmin):  # type: ignore[type-arg]
     def save_formset(self, request: HttpRequest, form: Any, formset: Any, change: bool) -> None:
         audit.save_inline_rows(formset, by=_staff(request))
 
-    @admin.action(description="Email the list about the selected drops")
+    @admin.action(description="Email the list about the selected drops", permissions=["change"])
     def email_the_list(self, request: HttpRequest, queryset: QuerySet[Drop]) -> None:
         for drop in queryset:
             try:

@@ -10,3 +10,7 @@ class PaymentsConfig(AppConfig):
 
     def ready(self) -> None:
         from apps.money.payments import checks  # noqa: F401  (registers the system checks)
+        from apps.money.payments.permissions import ROLE_PERMISSIONS
+        from apps.users.accounts.permissions import connect_role_permissions
+
+        connect_role_permissions(self, ROLE_PERMISSIONS)

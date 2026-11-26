@@ -17,7 +17,7 @@ def test_it_makes_and_cancels_a_one_dollar_test_payment() -> None:
     with override_settings(PAYMENT_PROVIDER="fake"):
         output = run()
 
-    assert "Created a 1.00 USD test payment" in output
+    assert "Created a $1.00 test payment" in output
     assert "cancelled it" in output
     assert "Payments are working" in output
 

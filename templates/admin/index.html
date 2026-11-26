@@ -1,0 +1,55 @@
+{% extends "admin/base.html" %}
+{% comment %}
+The admin home page (build E16): the day's numbers, then a button for each job this
+person may do. ``numbers`` and ``tasks`` come from apps/platform/core/admin_home.py.
+{% endcomment %}
+{% load i18n unfold %}
+
+{% block title %}Home | {{ site_title }}{% endblock %}
+
+{% block branding %}
+    {% include "unfold/helpers/site_branding.html" %}
+{% endblock %}
+
+{% block content %}
+<div class="flex flex-col gap-8">
+    <section>
+        <h2 class="font-semibold text-lg mb-4 text-font-important-light dark:text-font-important-dark">Today at a glance</h2>
+        <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            {% component "unfold/components/card.html" with title="Pieces for sale" %}
+                <p class="text-3xl font-semibold">{{ numbers.live_pieces }}</p>
+                <p class="text-sm">Live in the shop now</p>
+            {% endcomponent %}
+            {% component "unfold/components/card.html" with title="Paid orders" %}
+                <p class="text-3xl font-semibold">{{ numbers.paid_orders }}</p>
+                <p class="text-sm">Since the shop opened</p>
+            {% endcomponent %}
+            {% component "unfold/components/card.html" with title="Sales this month" %}
+                <p class="text-3xl font-semibold">{{ sales_this_month_text }}</p>
+                <p class="text-sm">Paid orders, tax included</p>
+            {% endcomponent %}
+            {% component "unfold/components/card.html" with title="Mailing list" %}
+                <p class="text-3xl font-semibold">{{ numbers.list_members }}</p>
+                <p class="text-sm">People who confirmed their email</p>
+            {% endcomponent %}
+        </div>
+    </section>
+
+    <section>
+        <h2 class="font-semibold text-lg mb-4 text-font-important-light dark:text-font-important-dark">What would you like to do?</h2>
+        {% if tasks %}
+        <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {% for task in tasks %}
+            <a href="{{ task.link }}" class="block border border-base-200 rounded-default p-4 shadow-xs hover:border-primary-600 dark:border-base-800">
+                <span class="material-symbols-outlined text-primary-600 align-middle">{{ task.icon }}</span>
+                <span class="font-semibold align-middle ml-2">{{ task.title }}</span>
+                <p class="text-sm mt-2">{{ task.description }}</p>
+            </a>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p>Your account has no tasks yet. Ask an owner to give you a staff role.</p>
+        {% endif %}
+    </section>
+</div>
+{% endblock %}

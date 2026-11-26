@@ -7,6 +7,7 @@ class ListingsConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
     name = "apps.shop.listings"
     label = "listings"
+    verbose_name = "Shop"
 
     def ready(self) -> None:
         from apps.shop.listings.permissions import ROLE_PERMISSIONS

@@ -2,10 +2,17 @@ from typing import Any
 
 from allauth.mfa.models import Authenticator
 from django.contrib import admin
+from django.contrib.auth.admin import GroupAdmin as DjangoGroupAdmin
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
-from django.contrib.auth.forms import AdminUserCreationForm, UserChangeForm
+from django.contrib.auth.models import Group
 from django.http import HttpRequest
 
+from apps.platform.core.admin_look import (
+    AdminPasswordChangeForm,
+    ModelAdmin,
+    UserChangeForm,
+    UserCreationForm,
+)
 from apps.users.accounts import services
 from apps.users.accounts.models import User
 
@@ -14,7 +21,7 @@ from apps.users.accounts.models import User
 admin.site.unregister(Authenticator)
 
 
-class UserAddForm(AdminUserCreationForm):  # type: ignore[type-arg]
+class UserAddForm(UserCreationForm):  # type: ignore[type-arg]
     class Meta:
         model = User
         fields = ("email",)
@@ -27,7 +34,7 @@ class UserEditForm(UserChangeForm):  # type: ignore[type-arg]
 
 
 @admin.register(User)
-class UserAdmin(DjangoUserAdmin):  # type: ignore[type-arg]
+class UserAdmin(DjangoUserAdmin, ModelAdmin):  # type: ignore[type-arg]
     """Django's user admin, adjusted for login by email.
 
     Every add or change is audited, roles (groups) included. Roles are saved after
@@ -36,6 +43,7 @@ class UserAdmin(DjangoUserAdmin):  # type: ignore[type-arg]
 
     add_form = UserAddForm
     form = UserEditForm
+    change_password_form = AdminPasswordChangeForm
 
     ordering = ("-id",)
     list_display = ("email", "first_name", "last_name", "country", "is_staff", "is_active")
@@ -86,3 +94,13 @@ class UserAdmin(DjangoUserAdmin):  # type: ignore[type-arg]
         super().save_related(request, form, formsets, change)
         staff: User = request.user  # type: ignore[assignment]
         services.record_staff_edit(form.instance, before=form.instance._audit_before, by=staff)
+
+
+# Roles are Django groups; show their screen in the same look. Their permissions are
+# set in code after every migrate (``apps/<app>/permissions.py``), so edits here are undone.
+admin.site.unregister(Group)
+
+
+@admin.register(Group)
+class RoleAdmin(DjangoGroupAdmin, ModelAdmin):  # type: ignore[type-arg]
+    pass

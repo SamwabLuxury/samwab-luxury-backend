@@ -65,6 +65,8 @@ class Listing(BaseModel):
     class Meta:
         db_table = "listings"
         ordering = ("-id",)
+        verbose_name = "piece for sale"  # what shop staff call it (admin, E16)
+        verbose_name_plural = "pieces for sale"
         indexes = (models.Index(fields=("status", "published_at"), name="listings_browse_idx"),)
         constraints = (
             models.CheckConstraint(

@@ -54,7 +54,7 @@ def status(client: Client, url: str) -> int:
 
 
 def test_a_catalog_editor_runs_the_whole_catalog() -> None:
-    assert codes(roles.CATALOG_EDITOR) == CATALOG_EDITING
+    assert codes(roles.CATALOG_EDITOR, "catalog") == CATALOG_EDITING
 
 
 def test_intake_staff_register_pieces_and_read_the_catalog() -> None:
@@ -85,9 +85,42 @@ def test_no_role_may_delete_a_piece_or_a_retire_only_catalog_row() -> None:
         assert not held & {"delete_piece", "delete_brand", "delete_category", "delete_productmodel"}
 
 
+STAFF_ROLES = {roles.CATALOG_EDITOR, roles.INTAKE_STAFF, roles.SUPPORT, roles.FINANCE}
+
+
 def test_roles_without_screens_yet_hold_nothing() -> None:
-    for role in set(roles.ALL_ROLES) - {roles.CATALOG_EDITOR, roles.INTAKE_STAFF}:
+    for role in set(roles.ALL_ROLES) - STAFF_ROLES:
         assert codes(role) == set(), role
+
+
+def expected(role: str, grants: list[tuple[str, Any]]) -> set[str]:
+    return {
+        f"{action}_{model}"
+        for _, table in grants
+        for model, actions in table.get(role, {}).items()
+        for action in actions
+    }
+
+
+def test_each_staff_role_holds_exactly_what_the_grant_files_say() -> None:
+    """E16: listings, drops, orders, payments and the mailing list joined the grants."""
+    modules = [
+        getattr(config.module, "permissions", None)
+        for config in global_apps.get_app_configs()
+        if config.name.startswith("apps.")
+    ]
+    grants = [
+        (module.__name__, module.ROLE_PERMISSIONS)
+        for module in modules
+        if module is not None and hasattr(module, "ROLE_PERMISSIONS")
+    ]
+    for role in STAFF_ROLES:
+        assert codes(role) == expected(role, grants), role
+
+
+def test_support_and_finance_only_look() -> None:
+    for role in (roles.SUPPORT, roles.FINANCE):
+        assert {code.split("_", 1)[0] for code in codes(role)} == {"view"}, role
 
 
 def test_nobody_but_a_superuser_reads_the_audit_log_yet() -> None:

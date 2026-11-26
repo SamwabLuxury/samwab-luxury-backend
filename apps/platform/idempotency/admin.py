@@ -5,11 +5,12 @@ from typing import Any
 from django.contrib import admin
 from django.http import HttpRequest
 
+from apps.platform.core.admin_look import ModelAdmin
 from apps.platform.idempotency.models import IdempotencyKey
 
 
 @admin.register(IdempotencyKey)
-class IdempotencyKeyAdmin(admin.ModelAdmin):  # type: ignore[type-arg]
+class IdempotencyKeyAdmin(ModelAdmin):  # type: ignore[type-arg]
     list_display = ("created_at", "user", "endpoint", "key", "response_status", "expires_at")
     list_select_related = ("user",)
     search_fields = ("=key", "user__email", "endpoint")
