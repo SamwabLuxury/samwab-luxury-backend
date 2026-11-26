@@ -24,7 +24,7 @@ LISTINGS = "/api/v1/listings/"
 def results(response: Any) -> list[dict[str, Any]]:
     assert response.status_code == 200, response.content
     body = response.json()
-    assert set(body) == {"next", "previous", "results"}
+    assert set(body) == {"count", "next", "previous", "results"}  # count since E18
     return list(body["results"])
 
 
@@ -232,7 +232,8 @@ def test_browsing_runs_a_fixed_number_of_queries(
     for _ in range(5):
         make_live_listing()
 
-    with django_assert_max_num_queries(3):
+    # Page, photos, and (since E18) one COUNT for "1,284 pieces": still fixed, however many.
+    with django_assert_max_num_queries(4):
         results(client.get(LISTINGS))
 
 

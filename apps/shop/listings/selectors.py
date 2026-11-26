@@ -5,9 +5,10 @@ The public sees live listings only, and never a piece found not authentic.
 
 from typing import Any
 
-from django.db.models import Count, Max, OuterRef, Prefetch, Q, QuerySet, Subquery
-from django.db.models.functions import Now
+from django.db.models import Count, F, Max, OuterRef, Prefetch, Q, QuerySet, Subquery
+from django.db.models.functions import Coalesce, Now
 
+from apps.inventory.catalog.models import Category
 from apps.inventory.pieces.enums import ConditionGrade, VerificationStatus
 from apps.inventory.pieces.models import Media
 from apps.shop.listings import drops
@@ -44,8 +45,13 @@ def public_listings(
     shows bracelets. Every word of ``q`` must appear in the title, brand or design.
     """
     listings = (
-        Listing.objects.filter(status=ListingStatus.LIVE)
-        .exclude(piece__verification_status=VerificationStatus.NOT_AUTHENTIC)
+        _matching(
+            q=q,
+            brand_slug=brand_slug,
+            category_slug=category_slug,
+            condition_min=condition_min,
+            price_max=price_max,
+        )
         .select_related("piece__brand", "piece__category", "piece__product_model")
         .prefetch_related(
             Prefetch("piece__photos", queryset=Media.objects.order_by("sort_order", "id"))
@@ -57,6 +63,22 @@ def public_listings(
                 filter=Q(orders__status="pending_payment", orders__hold_until__gt=Now()),
             )
         )
+    )
+    return listings
+
+
+def _matching(
+    *,
+    q: str = "",
+    brand_slug: str = "",
+    category_slug: str = "",
+    condition_min: str = "",
+    price_max: int | None = None,
+) -> QuerySet[Listing]:
+    """The one place the shop's filters are applied: live, not found not authentic,
+    and matching every filter given. Plain rows, so counting them stays cheap."""
+    listings = Listing.objects.filter(status=ListingStatus.LIVE).exclude(
+        piece__verification_status=VerificationStatus.NOT_AUTHENTIC
     )
     if brand_slug:
         listings = listings.filter(piece__brand__slug=brand_slug)
@@ -94,6 +116,60 @@ def saved_listings(user: User) -> QuerySet[Listing]:
 def shop_listings(**filters: Any) -> QuerySet[Listing]:
     """The normal shop: live listings not in a running drop (closed drops' lots are)."""
     return public_listings(**filters).filter(drops.in_normal_shop())
+
+
+def shop_count(**filters: Any) -> int:
+    """How many pieces the shop shows for these filters, on every page of the list."""
+    return _matching(**filters).filter(drops.in_normal_shop()).count()
+
+
+def shop_facets(**filters: Any) -> dict[str, Any]:
+    """The total and a count per house and per top category, for the shop's filters.
+
+    A house's count leaves out the brand filter, and a category's the category
+    filter, so choosing Hermès still lists every house with its own count. A
+    category under another (Bracelets) is counted in its top one (Jewellery), as the
+    shop's category filter works. Houses and categories with nothing for sale are
+    left out. Both lists are sorted by name.
+    """
+    in_shop = drops.in_normal_shop()
+    brands = (
+        _matching(**{**filters, "brand_slug": ""})
+        .filter(in_shop)
+        .values(slug=F("piece__brand__slug"), name=F("piece__brand__name"))
+        .annotate(count=Count("id"))
+        .order_by("name", "slug")
+    )
+    top = Coalesce("piece__category__parent", "piece__category")
+    categories = (
+        _matching(**{**filters, "category_slug": ""})
+        .filter(in_shop)
+        .annotate(top_id=top)
+        .values("top_id")
+        .annotate(count=Count("id"))
+        .order_by()
+    )
+    names = {
+        row["id"]: row
+        for row in Category.objects.filter(id__in=[c["top_id"] for c in categories]).values(
+            "id", "slug", "name"
+        )
+    }
+    return {
+        "total": shop_count(**filters),
+        "brands": [dict(row) for row in brands],
+        "categories": sorted(
+            (
+                {
+                    "slug": names[c["top_id"]]["slug"],
+                    "name": names[c["top_id"]]["name"],
+                    "count": c["count"],
+                }
+                for c in categories
+            ),
+            key=lambda c: (c["name"], c["slug"]),
+        ),
+    }
 
 
 def visible_listings(viewer: User | None) -> QuerySet[Listing]:
