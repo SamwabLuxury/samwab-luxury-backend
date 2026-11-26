@@ -175,6 +175,14 @@ HEADLESS_FRONTEND_URLS = {
 # sends the token to POST /api/v1/mailing-list/confirm/ or .../unsubscribe/.
 MAILING_LIST_CONFIRM_URL = f"{FRONTEND_URL}/mailing-list/confirm/{{token}}"
 MAILING_LIST_UNSUBSCRIBE_URL = f"{FRONTEND_URL}/mailing-list/unsubscribe/{{token}}"
+# The order confirmation email (E21): its "Track your order" link (the web app's order
+# page; {order_id} and {order_number} are filled in) and the company's legal name
+# (the lead, 26 Nov: "SAMWAB Luxury, LLC", Illinois).
+ORDER_PAGE_URL = env("DJANGO_ORDER_PAGE_URL", default=f"{FRONTEND_URL}/account/orders/{{order_id}}")
+COMPANY_LEGAL_NAME = env("DJANGO_COMPANY_LEGAL_NAME", default="SAMWAB Luxury, LLC")
+# Where buyers' replies to order emails go. Empty: emails come from no-reply only and
+# ask buyers to write in from their account instead.
+SUPPORT_EMAIL = env("DJANGO_SUPPORT_EMAIL", default="")
 MAILING_LIST_CONFIRM_DAYS = 7
 DROP_PAGE_URL = f"{FRONTEND_URL}/drops/{{number}}"
 

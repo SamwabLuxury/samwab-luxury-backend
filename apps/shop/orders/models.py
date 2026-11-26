@@ -52,6 +52,9 @@ class Order(BaseModel):
     )
     hold_until = models.DateTimeField(help_text="Unpaid by then, the piece goes back on sale.")
     paid_at = models.DateTimeField(null=True, blank=True)
+    confirmation_sent_at = models.DateTimeField(
+        null=True, blank=True, editable=False, help_text="When the confirmation email went (E21)."
+    )
     cancelled_at = models.DateTimeField(null=True, blank=True)
     cancel_reason = models.CharField(max_length=40, choices=CancelReason.choices, blank=True)
 

@@ -1153,6 +1153,20 @@ withdraw it (409 `listing_held`). Orders, payments and refunds are read-only in
 the admin site (superusers). Not yet: the piece's owner does not change (the
 ownership ledger comes later), and delivery, intake and returns are later builds.
 
+**Order confirmation email (build E21):** when Stripe's confirmed payment makes an
+order `paid`, the buyer gets one email (Figma "Email 01 · Order confirmed"): the order
+number, the piece, the price, sales tax (only when some was charged), what was paid
+today, delivery by their own courier, a "Track your order" link
+(`DJANGO_ORDER_PAGE_URL`) and the company's legal name (`DJANGO_COMPANY_LEGAL_NAME`,
+"SAMWAB Luxury, LLC"). It has a plain-text and a formatted version
+(`templates/orders/confirmation.txt` and `.html`). It is sent after the payment is
+saved, never for a change that was rolled back, and at most once (`confirmation_sent_at`
+on the order; a repeated Stripe notice sends nothing). If Resend is down, the payment
+still stands: the error is logged and `python manage.py send_order_confirmations`
+sends whatever was missed (safe to run any time). Replies go to `DJANGO_SUPPORT_EMAIL`
+when it is set; without it the email asks the buyer to contact us from their account,
+because replies to `no-reply@` would bounce.
+
 **Webhook processing:** every Stripe payment event makes us read the payment from
 Stripe and act on it inside the webhook request. If acting fails, the event keeps
 the error (`last_error`, `attempts`) and the webhook answers 500, so Stripe sends
@@ -1610,6 +1624,9 @@ Servers use `configurations.settings.production` (or `staging`).
 | `RESEND_API_KEY` | production; optional on your machine | Resend's API key (`re_...`). On the live site every email then goes through Resend. Never in Git or chat |
 | `DJANGO_EMAIL_TO_LOGS` | production, only while there is no `RESEND_API_KEY` | `true` writes emails to the logs instead of sending them; ignored once `RESEND_API_KEY` is set |
 | `DJANGO_FRONTEND_URL` | staging, production | The web app's address, used for links in emails. Default `http://localhost:3000` |
+| `DJANGO_ORDER_PAGE_URL` | optional | The "Track your order" link in order emails; `{order_id}` and `{order_number}` are filled in. Default `<DJANGO_FRONTEND_URL>/account/orders/{order_id}` |
+| `DJANGO_COMPANY_LEGAL_NAME` | optional | The company's legal name, at the foot of order emails. Default `SAMWAB Luxury, LLC` |
+| `DJANGO_SUPPORT_EMAIL` | optional | Where buyers' replies to order emails go, such as `care@samwabluxury.com`. Empty: no reply address |
 | `DJANGO_DEFAULT_FROM_EMAIL` | staging, production | Sender of every email, such as `Samwab <no-reply@samwabluxury.com>`. Must be on the domain verified in Resend |
 | `DJANGO_EMAIL_HOST`, `DJANGO_EMAIL_PORT`, `DJANGO_EMAIL_USER`, `DJANGO_EMAIL_PASSWORD`, `DJANGO_EMAIL_USE_TLS` | not used on Render | SMTP details, only for a host that allows SMTP. Render's free plan blocks SMTP ports, so the live site uses `RESEND_API_KEY` |
 | `RENDER_EXTERNAL_HOSTNAME`, `PORT`, `WEB_CONCURRENCY` | Render | Set by Render (the last by you): the public host name, the port Gunicorn listens on, the number of workers |
@@ -1622,7 +1639,7 @@ On your own machine, only `DJANGO_SECRET_KEY` is needed.
 The README is updated in every build.
 
 
-Last build: E20, drop recaps and sold lots.
+Last build: E21, order confirmation email.
 
 ## Build history
 
@@ -1667,6 +1684,7 @@ One line per build, newest last. Each build is one feature, merged into `dev`.
 | E18 | 26 Nov 2026 | Shop totals and filter counts: `count` on every page of `GET /api/v1/listings/`; `GET /api/v1/listings/facets/` (total, houses, top categories, each leaving out its own filter); one filter helper for the list, the count and the facets; counted cursor paging |
 | E19 | 26 Nov 2026 | A sold piece keeps its page: `GET /api/v1/listings/{id}/` answers sold listings (`status: "sold"`, `sold_at`, no price explainer) instead of 404; `listings.sold_at` set when an order sells it (migration `listings.0006`, filled in for pieces already sold from their paid order); everything that offers a piece still sees live ones only |
 | E20 | 26 Nov 2026 | Drop recaps and sold lots: drop pages list lots for sale or sold (`sold_at`), so a closed drop's page is its recap; `sold_count` on every drop; `GET /api/v1/drops/?phase=closed` lists past drops, newest first; withdrawn lots stay hidden; the early-hours rule unchanged |
+| E21 | 26 Nov 2026 | Order confirmation email: one email to the buyer when an order is paid (piece, price, sales tax when charged, paid today, own courier, "Track your order", "SAMWAB Luxury, LLC"), plain and formatted; sent after the payment is saved and only once (`confirmation_sent_at`); a mail outage never undoes a payment, and `send_order_confirmations` sends what was missed; optional `DJANGO_SUPPORT_EMAIL` for replies |
 
 Builds run in the order the roadmap sets, so numbers can skip: builds 12 to 14 came
 before 06 to 11 to start on what buyers see, then 07, 08, the 08a tidy-up and build 01 (production deploy).
