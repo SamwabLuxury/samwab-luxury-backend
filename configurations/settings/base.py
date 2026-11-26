@@ -32,6 +32,7 @@ DEBUG = False
 ALLOWED_HOSTS: list[str] = []
 
 DJANGO_APPS = [
+    "unfold",  # the admin's look; must come before django.contrib.admin
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -315,5 +316,25 @@ LOGGING: dict[str, Any] = {
         "django": {"handlers": ["console"], "level": "INFO", "propagate": False},
         # Stripe's library logs every request at INFO; keep only its warnings.
         "stripe": {"handlers": ["console"], "level": "WARNING", "propagate": False},
+    },
+}
+
+
+# ---------- Admin site (django-unfold; build E16) ----------
+# A plain-words admin for non-developers: a home page with the day's numbers and each
+# person's tasks, and a menu grouped by task in which each role sees its own screens.
+from apps.platform.core.admin_menu import NAVIGATION as _ADMIN_NAVIGATION  # noqa: E402
+
+UNFOLD = {
+    "SITE_TITLE": "Samwab admin",
+    "SITE_HEADER": "Samwab",
+    "SITE_SUBHEADER": "Shop admin",
+    "SITE_SYMBOL": "diamond",
+    "SITE_URL": None,
+    "DASHBOARD_CALLBACK": "apps.platform.core.admin_home.home",
+    "SIDEBAR": {
+        "show_search": False,
+        "show_all_applications": False,
+        "navigation": _ADMIN_NAVIGATION,
     },
 }

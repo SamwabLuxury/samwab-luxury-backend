@@ -54,6 +54,7 @@ class CaptureProtocol(BaseModel):
 
     class Meta:
         db_table = "capture_protocols"
+        verbose_name = "photo checklist"  # what shop staff call it (admin, E16)
         ordering = ("category__sort_order", "category__slug", "product_model__slug", "-version")
         constraints = (
             # Postgres treats empty designs as all different, so the two kinds of

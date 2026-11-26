@@ -60,6 +60,7 @@ class User(AbstractBaseUser, PermissionsMixin, BaseModel):
 
     class Meta:
         db_table = "users"
+        verbose_name = "account"  # buyers and staff alike (admin, E16)
         constraints = (
             # Emails are stored in lowercase only. Together with the unique rule on
             # the column, "Ada@x.com" and "ada@x.com" can never be two accounts.

@@ -195,7 +195,9 @@ used there.
    `DJANGO_DEFAULT_FROM_EMAIL="Samwab <no-reply@your-verified-domain>"`.
 4. Run `python manage.py check_email you@example.com`. It sends one test email and
    says `Email is working`; if Resend refuses, it shows Resend's reason (a wrong
-   key, or a sending address not on the verified domain).
+   key, or a sending address not on the verified domain). If it says
+   `Could not reach Resend`, the request timed out or the connection dropped: nothing
+   was tested, so check your internet connection and run it again in a minute.
 5. In Render, **Environment**: add the same two variables and remove
    `DJANGO_EMAIL_TO_LOGS`. After the deploy, sign up with a new address on the web
    app (or join the mailing list) and check the inbox.
@@ -219,7 +221,7 @@ again, or remove `CLOUDINARY_URL` from `.env` to go back to `media/`.
 
 ### List a piece for sale
 
-Log in to the admin site as a superuser (only admins list pieces for now). Every
+Log in to the admin site as a superuser or as a member of `intake_staff`. Every
 step is an admin screen, so it works the same on the live site (no shell needed).
 
 1. **House account (once):** house stock belongs to Samwab's house account. Add a
@@ -235,14 +237,14 @@ step is an admin screen, so it works the same on the live site (no shell needed)
    vault cannot be sent out from here: a sale does that. (Build E7a; the custody
    build will replace these with custody events that also record the shelf.)
 4. Open http://127.0.0.1:8000/admin/listings/listing/add/, pick the piece, choose
-   **From the vault**, type the price in cents (`1250000` is $12,500.00) and save.
+   **From the vault**, type the price in dollars (`12,500.00`) and save.
 5. On the list page, tick it, choose **Publish the selected drafts** and press **Go**.
 6. Open http://127.0.0.1:8000/api/v1/listings/ to see it in the browse API.
 7. **Price explainer (optional):** give the piece a condition grade, and add past
    sales of the same design at that grade at `/admin/catalog/comparablesale/add/`;
    they appear under `price_explainer.recent_sales` on
    `/api/v1/listings/<id>/`. On the listing's page, **Price explainer: adjustments**
-   takes lines such as "Complete set", **Add**, `30000`.
+   takes lines such as "Complete set", **Add**, `300.00`.
 
 ### Staff roles and the audit log
 
@@ -905,7 +907,7 @@ Staff run the catalog in the admin site (`/admin/catalog/`):
   children, `attribute_schema` is a JSON object, `flaw_types` is a list of codes
   such as `["pilling", "missing_stone"]`, an HS code is 6 to 10 digits, and a
   design's years run from 1800 to next year, first year before last.
-- **Capture protocols** (`/admin/catalog/captureprotocol/`) list the photos and
+- **Photo checklists** (capture protocols, `/admin/catalog/captureprotocol/`) list the photos and
   readings staff take of a piece, in order: for example a macro photo of the heat
   stamp, or a scale reading. A protocol is a category's default, or belongs to one
   design. Staff add a protocol (it starts as a draft, numbered v1, v2 and so on), add
@@ -916,8 +918,9 @@ Staff run the catalog in the admin site (`/admin/catalog/`):
   or loupe; a reading uses an XRF analyser, diamond tester or scale. In code,
   `selectors.active_protocol_for(category=..., product_model=...)` gives the
   protocol that applies: the design's own if it has one, otherwise the category's.
-- **Comparable sales** (`/admin/catalog/comparablesale/`) record what similar
-  pieces sold for, in whole US cents (convert other currencies on the sale date).
+- **Past sales** (comparable sales, `/admin/catalog/comparablesale/`) record what
+  similar pieces sold for. Staff type US dollars; the table keeps whole US cents
+  (convert other currencies on the sale date).
   The design, when given, must match the brand and category. The grade is one of
   the five piece grades (New, Excellent, Very good, Good, Fair) or empty; only a
   graded sale can appear in a listing's price explainer (Listings, below), which
@@ -1267,10 +1270,12 @@ on a schedule:
 - Saving holds nothing: anyone can still buy the piece. The 15-minute hold starts
   only at checkout.
 
-**In the admin site** (`/admin/listings/listing/`, superusers only for now):
+**In the admin site** (**Pieces for sale**, `/admin/listings/listing/`: superusers and
+`intake_staff` draft and change; `catalog_editor` changes prices; `support` and
+`finance` look):
 
 - **Draft**: pick the piece, choose where it ships from (from the vault, or from
-  the owner's home), type the price in cents. The seller is filled in: the piece's
+  the owner's home), type the price in dollars. The seller is filled in: the piece's
   owner, Samwab's house account for house stock. A piece has at most one open
   listing (draft or live) at a time; the database enforces it.
 - **Publish** (action on the list page): refused, with every reason listed, until
@@ -1282,7 +1287,7 @@ on a schedule:
   listing. The piece and where it ships from cannot change after drafting, for the
   same reason.
 - **Price explainer: adjustments**, on an open listing's page: label, add or
-  subtract, amount in cents, order. Locked once the listing is closed. Every row
+  subtract, amount in dollars, order. Locked once the listing is closed. Every row
   added, changed or deleted is an audit event (`listings.listingpriceadjustment.*`).
 - Listings are never deleted. Every draft, publish, price change and withdrawal is
   an audit event.
@@ -1297,14 +1302,48 @@ or more role groups (to see anything there). What each role may do is written in
 code, in `apps/<app>/permissions.py`, and set again after every `migrate`, so a
 role's permissions are always what the reviewed code says:
 
-| Role | Admin screens |
-|---|---|
-| `catalog_editor` | The whole catalog: brands, categories and designs (add, change, retire; never delete), materials, capture protocols and shots, comparable sales (add, change, delete) |
-| `intake_staff` | Pieces and their materials (add and change; pieces are never deleted), and the catalog read only, to pick a brand, category, design and materials |
-| the other roles | Nothing yet: their screens come with their builds |
+| Role | Who it is for | Admin screens |
+|---|---|---|
+| `intake_staff` | Staff listing pieces | Pieces and their materials (add and change; pieces are never deleted); **pieces for sale** (draft, change the price, publish, withdraw) and their price adjustments; the catalog read only |
+| `catalog_editor` | Staff running drops and prices | The whole catalog: brands, categories and designs (add, change, retire; never delete), materials, photo checklists, past sales (add, change, delete); **drops** and their lots (add, change); prices and price adjustments on pieces for sale; the mailing list, read only |
+| `support` | Staff handling orders | Orders and their payments, pieces for sale and the mailing list: read only |
+| `finance` | The owners checking numbers | Orders and payments, pieces for sale, price history and adjustments, drops and the mailing list: read only |
+| the other roles | | Nothing yet: their screens come with their builds |
 
-A superuser can do everything and is the only one who reads the audit log for now.
-Which other roles get which screens is still being agreed with the client.
+A superuser can do everything and is the only one who reads the audit log and the
+other **Technical** screens. Roles were settled by the lead on 26 Nov (build E16).
+Every admin action (publish, withdraw, retire, email the list) needs the change
+permission of its screen, so a read-only role is never offered one.
+
+### The admin site for shop staff (build E16)
+
+The admin site is built for people who are not developers
+([django-unfold](https://unfoldadmin.com/) look, MIT licence):
+
+- **Home** shows today's numbers (pieces for sale, paid orders, sales this month,
+  confirmed mailing-list members) and a button for each job the person may do:
+  **Add a new piece**, **Put a piece up for sale**, **Start a drop**,
+  **Record a past sale**, **Paid orders**, **Pieces for sale**, **Mailing list**.
+  A button shows only to roles allowed to do that job
+  (`apps/platform/core/admin_home.py`).
+- **The menu** is grouped by task in plain words: Shop · Drops and mailing list ·
+  Orders · Catalog and prices · People · Technical. Each person sees only the screens
+  their role may open (`apps/platform/core/admin_menu.py`); Technical (audit log,
+  saved request keys, Stripe events, login email addresses) and Staff roles are for
+  superusers.
+- **Prices are typed in dollars** (`12,500.00`, `12500` or `$12,500`) and shown as
+  `$12,500.00`; the database still keeps whole US cents
+  (`apps/platform/core/admin_dollars.py`). The API is unchanged: amounts in cents.
+- **Plain names:** "Pieces for sale" (listings), "Past sales" (comparable sales),
+  "Photo checklists" (capture protocols), "Accounts" (users). Table and API names do
+  not change.
+
+For developers: admin files import `ModelAdmin`, `TabularInline` and the user forms
+from `apps/platform/core/admin_look.py`, never from `unfold` directly. At run time
+those are unfold's classes; the type checker sees Django's, because unfold ships no
+type hints. A new admin screen also needs a menu item in `admin_menu.py` and, if a
+role uses it, a line in that app's `permissions.py`. A test fails if a screen is
+added without the new look, or an action without a permission.
 
 **Audit log** (`audit_events`, admin: `/admin/audit/auditevent/`). One row for every
 change staff make, written in the same transaction as the change, so there is never
@@ -1556,7 +1595,7 @@ On your own machine, only `DJANGO_SECRET_KEY` is needed.
 The README is updated in every build.
 
 
-Last build: E15, error messages people can read.
+Last build: E16, an admin site for shop staff.
 
 ## Build history
 
@@ -1596,6 +1635,7 @@ One line per build, newest last. Each build is one feature, merged into `dev`.
 | E13 | 25 Nov 2026 | Drops: `drops` and `drop_lots`; phases from the clock (members 24 hours early, then everyone, then unsold lots join the shop); `GET /api/v1/drops/` and `/{number}/`; the same rule in the shop, the listing page, saving and checkout (`drop_not_open`); drop admin with locked lots once early access starts; one email to the list per drop |
 | E14 | 25 Nov 2026 | Email through Resend's HTTPS API (Render's free plan blocks SMTP): `apps.platform.core.mail.ResendEmailBackend` (standard library only; one retry on 429/500/503; attachments refused for now); production uses it when `RESEND_API_KEY` is set; `check_email` command |
 | E15 | 25 Nov 2026 | Error messages people can read: every `detail` and field `message` rewritten for shoppers (codes unchanged); `plain_words.py`; allauth login and two-step messages; a test checks every error class for technical words |
+| E16 | 26 Nov 2026 | An admin site for shop staff: django-unfold look; home page with today's numbers and task buttons by role; menu grouped by task, each role seeing its own screens; roles for listings, drops, orders, payments and the mailing list (`intake_staff`, `catalog_editor`, `support`, `finance`); every action needs a permission; prices typed and shown in dollars; plain screen names (label-only migrations); money written `$12,500.00` for people; `check_email` blames the network, not the key, on a timeout |
 
 Builds run in the order the roadmap sets, so numbers can skip: builds 12 to 14 came
 before 06 to 11 to start on what buyers see, then 07, 08, the 08a tidy-up and build 01 (production deploy).

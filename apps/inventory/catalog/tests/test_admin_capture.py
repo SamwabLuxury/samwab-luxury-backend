@@ -189,7 +189,7 @@ def test_staff_record_a_comparable_sale(boss_client: Client) -> None:
             "product_model": str(kelly.id),
             "source": "auction",
             "source_url": "https://example.com/lot/42",
-            "price_minor": "1420000",
+            "price_minor": "14,200.00",  # typed in dollars since E16
             "currency": "USD",
             "sold_on": "2026-10-01",
         },
@@ -203,4 +203,4 @@ def test_staff_record_a_comparable_sale(boss_client: Client) -> None:
 def test_the_sales_list_shows_prices_in_dollars(boss_client: Client) -> None:
     make_sale(1_420_000)
 
-    assert "14200.00 USD" in page(boss_client.get(f"{ADMIN}/comparablesale/"))
+    assert "$14,200.00" in page(boss_client.get(f"{ADMIN}/comparablesale/"))

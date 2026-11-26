@@ -31,6 +31,13 @@ class ResendError(Exception):
     """Resend refused or could not be reached. The message says why, in Resend's words."""
 
 
+class ResendUnreachable(ResendError):
+    """The request never got an answer: no network, a timeout or a dropped line.
+
+    Kept apart from a refusal so nobody is told to check a key that was never tested.
+    """
+
+
 class ResendEmailBackend(BaseEmailBackend):
     """A Django email backend: set it in MAILERS with OPTIONS {"api_key": ...}."""
 
@@ -94,11 +101,12 @@ class ResendEmailBackend(BaseEmailBackend):
                     time.sleep(RETRY_AFTER_SECONDS)
                     continue
                 raise ResendError(_reason(error)) from error
-            except urllib.error.URLError as error:
+            except (urllib.error.URLError, OSError) as error:  # OSError: timeouts, resets
                 if attempt == 1:
                     time.sleep(RETRY_AFTER_SECONDS)
                     continue
-                raise ResendError(f"could not reach Resend ({error.reason}).") from error
+                reason = getattr(error, "reason", None) or error or type(error).__name__
+                raise ResendUnreachable(f"could not reach Resend ({reason}).") from error
 
 
 def _reason(error: urllib.error.HTTPError) -> str:

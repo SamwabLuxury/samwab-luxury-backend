@@ -31,7 +31,7 @@ class ListMember(BaseModel):
     class Meta:
         db_table = "mailing_list_members"
         ordering = ("-id",)
-        verbose_name = "list member"
+        verbose_name = "mailing list member"
         constraints = (
             models.CheckConstraint(
                 condition=models.Q(status__in=MemberStatus.values),

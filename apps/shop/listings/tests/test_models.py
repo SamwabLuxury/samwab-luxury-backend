@@ -95,4 +95,4 @@ def test_house_stock_has_no_floor_price() -> None:
 def test_str_names_the_piece_and_price() -> None:
     listing = make_listing(ask_minor=1_250_000)
 
-    assert str(listing) == "Kelly 28, Gold Togo · 12500.00 USD · draft"
+    assert str(listing) == "Kelly 28, Gold Togo · $12,500.00 · draft"

@@ -38,7 +38,7 @@ def test_sale_defaults_and_price() -> None:
     assert sale.source_url == ""
     assert sale.condition_grade == ""
     assert sale.price == Money(1_420_000)
-    assert str(sale) == "Hermès, 14200.00 USD on 2026-10-01 (auction)"
+    assert str(sale) == "Hermès, $14,200.00 on 2026-10-01 (auction)"
 
 
 def test_a_very_large_price_fits() -> None:

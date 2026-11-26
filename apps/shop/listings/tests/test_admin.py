@@ -52,8 +52,9 @@ def act(client: Client, action: str, *listings: Listing) -> Any:
 def test_staff_draft_a_listing_for_a_piece(admin_client: Client) -> None:
     piece = ready_piece()
 
+    # Staff type dollars since E16; the listing stores cents.
     response = admin_client.post(
-        ADD, form(piece=str(piece.pk), fulfilment="from_vault", ask_minor="1250000")
+        ADD, form(piece=str(piece.pk), fulfilment="from_vault", ask_minor="12,500.00")
     )
 
     assert response.status_code == 302, response.content.decode()[:3000]
@@ -115,14 +116,14 @@ def test_a_listing_that_is_not_ready_shows_why(admin_client: Client) -> None:
 def test_changing_the_price_is_recorded(admin_client: Client) -> None:
     listing = make_live_listing(ask_minor=1_000_00)
 
-    response = admin_client.post(change_url(listing), form(ask_minor="90000"))
+    response = admin_client.post(change_url(listing), form(ask_minor="900.00"))
 
     assert response.status_code == 302, response.content.decode()[:3000]
     listing.refresh_from_db()
     assert listing.ask_minor == 900_00
     assert listing.price_changes.get().old_ask_minor == 1_000_00
     page = admin_client.get(change_url(listing)).content.decode()
-    assert "1000.00 USD" in page and "900.00 USD" in page  # the price history on the page
+    assert "$1,000.00" in page and "$900.00" in page  # the price history on the page
 
 
 def test_a_withdrawn_listing_cannot_be_edited_or_deleted(admin_client: Client) -> None:
@@ -151,6 +152,7 @@ def test_the_piece_and_status_never_change_on_the_form(admin_client: Client) -> 
 
 
 def test_staff_without_a_listing_role_cannot_see_listings(client: Client) -> None:
-    admin_login(client, make_staff("intake@samwab.com", "intake_staff"))
+    # Intake staff list stock since E16; reviewers (authenticators) have no listings role.
+    admin_login(client, make_staff("reviewer@samwab.com", "reviewer"))
 
     assert client.get(LIST).status_code == 403

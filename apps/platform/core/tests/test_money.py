@@ -211,7 +211,14 @@ def test_split_refuses_bad_weights(bad_weights: Any) -> None:
 
 @pytest.mark.parametrize(
     ("amount", "text"),
-    [(1250, "12.50 USD"), (5, "0.05 USD"), (0, "0.00 USD"), (100_000, "1000.00 USD")],
+    [
+        (1250, "$12.50"),
+        (5, "$0.05"),
+        (0, "$0.00"),
+        (100_000, "$1,000.00"),
+        (1_250_000, "$12,500.00"),
+    ],
 )
-def test_str(amount: int, text: str) -> None:
+def test_str_is_written_as_people_read_it(amount: int, text: str) -> None:
+    """E16: shop staff read "$12,500.00", not "12500.00 USD". The API is unchanged."""
     assert str(Money(amount)) == text

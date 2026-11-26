@@ -104,4 +104,6 @@ class Money:
         return [Money(part, self.currency) for part in parts]
 
     def __str__(self) -> str:
-        return f"{self.amount_minor // 100}.{self.amount_minor % 100:02d} {self.currency}"
+        """For people to read: "$12,500.00". The API sends cents and a currency code."""
+        units = f"{self.amount_minor // 100:,}.{self.amount_minor % 100:02d}"
+        return f"${units}" if self.currency == "USD" else f"{units} {self.currency}"
