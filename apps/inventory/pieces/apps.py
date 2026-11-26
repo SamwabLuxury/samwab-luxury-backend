@@ -7,6 +7,7 @@ class PiecesConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
     name = "apps.inventory.pieces"
     label = "pieces"
+    verbose_name = "Stock"
 
     def ready(self) -> None:
         from apps.inventory.pieces.permissions import ROLE_PERMISSIONS

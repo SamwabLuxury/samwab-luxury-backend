@@ -1335,8 +1335,14 @@ The admin site is built for people who are not developers
   `$12,500.00`; the database still keeps whole US cents
   (`apps/platform/core/admin_dollars.py`). The API is unchanged: amounts in cents.
 - **Plain names:** "Pieces for sale" (listings), "Past sales" (comparable sales),
-  "Photo checklists" (capture protocols), "Accounts" (users). Table and API names do
-  not change.
+  "Photo checklists" (capture protocols), "Accounts" (users), section "Stock" (pieces).
+  Table and API names do not change.
+- **The shop's own look (build E17):** colours from the Figma design (espresso
+  `#2b1712`, cream `#f7f2ea`, sand `#e8e0d2`, lines `#d9d0c1`, gold `#b08a4e`) in
+  `UNFOLD["COLORS"]`, the "S" mark (`apps/platform/core/static/samwab_admin/monogram.svg`)
+  and serif headings on the home page. The admin is always light, as the design has no
+  dark version. `samwab_admin/samwab.css` also makes the action menu on list pages
+  readable (its choices were white on grey on computers set to dark mode).
 
 For developers: admin files import `ModelAdmin`, `TabularInline` and the user forms
 from `apps/platform/core/admin_look.py`, never from `unfold` directly. At run time
@@ -1595,7 +1601,7 @@ On your own machine, only `DJANGO_SECRET_KEY` is needed.
 The README is updated in every build.
 
 
-Last build: E16, an admin site for shop staff.
+Last build: E17, the admin in the shop's own colours.
 
 ## Build history
 
@@ -1636,6 +1642,7 @@ One line per build, newest last. Each build is one feature, merged into `dev`.
 | E14 | 25 Nov 2026 | Email through Resend's HTTPS API (Render's free plan blocks SMTP): `apps.platform.core.mail.ResendEmailBackend` (standard library only; one retry on 429/500/503; attachments refused for now); production uses it when `RESEND_API_KEY` is set; `check_email` command |
 | E15 | 25 Nov 2026 | Error messages people can read: every `detail` and field `message` rewritten for shoppers (codes unchanged); `plain_words.py`; allauth login and two-step messages; a test checks every error class for technical words |
 | E16 | 26 Nov 2026 | An admin site for shop staff: django-unfold look; home page with today's numbers and task buttons by role; menu grouped by task, each role seeing its own screens; roles for listings, drops, orders, payments and the mailing list (`intake_staff`, `catalog_editor`, `support`, `finance`); every action needs a permission; prices typed and shown in dollars; plain screen names (label-only migrations); money written `$12,500.00` for people; `check_email` blames the network, not the key, on a timeout |
+| E17 | 26 Nov 2026 | The admin in the shop's own colours: Figma palette (espresso, cream, sand, gold) in `UNFOLD["COLORS"]`, always light, the "S" mark, serif headings; the action menu readable on dark-mode computers; pieces section named "Stock" |
 
 Builds run in the order the roadmap sets, so numbers can skip: builds 12 to 14 came
 before 06 to 11 to start on what buyers see, then 07, 08, the 08a tidy-up and build 01 (production deploy).
