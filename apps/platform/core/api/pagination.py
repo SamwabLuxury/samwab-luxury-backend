@@ -47,13 +47,49 @@ class CursorPagination(DRFCursorPagination):
         return response_schema
 
 
-def ordered_by(*fields: str) -> type[CursorPagination]:
+class CountedCursorPagination(CursorPagination):
+    """Cursor paging that also says how many rows match, on every page.
+
+    The view sets ``total_count(request)``; the count is worked out once per page by
+    that function (a plain ``COUNT``), not from the page's own rows. Used where a
+    screen shows "1,284 pieces" or "Show 4 more · 1,280 left".
+    """
+
+    def paginate_queryset(self, queryset: Any, request: Any, view: Any = None) -> Any:
+        counter = getattr(view, "total_count", None)
+        self.count = counter(request) if counter else queryset.count()
+        return super().paginate_queryset(queryset, request, view)
+
+    def get_paginated_response(self, data: Any) -> Any:
+        response = super().get_paginated_response(data)
+        response.data = {"count": self.count, **response.data}
+        return response
+
+    def get_paginated_response_schema(self, schema: dict[str, Any]) -> dict[str, Any]:
+        response_schema = super().get_paginated_response_schema(schema)
+        response_schema["properties"] = {
+            "count": {
+                "type": "integer",
+                "description": "How many rows match the filters, across every page.",
+            },
+            **response_schema["properties"],
+        }
+        response_schema.setdefault("required", [])
+        if "count" not in response_schema["required"]:
+            response_schema["required"] = ["count", *response_schema["required"]]
+        return response_schema
+
+
+def ordered_by(*fields: str, counted: bool = False) -> type[CursorPagination]:
     """The same paging with a different order, for lists that are not newest first.
 
     The cursor stands on the first field, so it should be nearly unique and
     should not change once set, such as a slug. Rows that share a value are
     still paged exactly, but each shared value makes the next page a little slower.
 
-    Use it on a view: ``pagination_class = ordered_by("slug")``.
+    Use it on a view: ``pagination_class = ordered_by("slug")``. With
+    ``counted=True`` each page also carries ``count`` (see ``CountedCursorPagination``).
     """
-    return type(f"CursorPagination_{'_'.join(fields)}", (CursorPagination,), {"ordering": fields})
+    base = CountedCursorPagination if counted else CursorPagination
+    name = f"{base.__name__}_{'_'.join(f.replace('-', 'desc_') for f in fields)}"
+    return type(name, (base,), {"ordering": fields})
