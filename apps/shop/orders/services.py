@@ -7,6 +7,7 @@ repeated, late or crossing messages cannot move an order twice or backwards.
 """
 
 import logging
+from functools import partial
 
 from django.conf import settings
 from django.db import transaction
@@ -23,6 +24,7 @@ from apps.shop.listings import drops
 from apps.shop.listings import services as listings
 from apps.shop.listings.enums import ListingStatus
 from apps.shop.listings.models import Listing
+from apps.shop.orders import emails
 from apps.shop.orders.enums import CancelReason, Channel, OrderKind, OrderStatus
 from apps.shop.orders.exceptions import (
     CannotBuyOwnListingError,
@@ -229,6 +231,8 @@ def on_payment_update(update: payments.PaymentUpdate) -> None:
         if listing.status == ListingStatus.LIVE:
             _move(order, OrderStatus.PAID, verb="paid", by=None, paid_at=timezone.now())
             listings.mark_sold(listing)
+            # Email the buyer once the payment is saved, never for a rolled-back one.
+            transaction.on_commit(partial(emails.send_confirmation, order.pk))
             return
         _move(
             order,

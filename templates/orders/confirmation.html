@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Order {{ order.order_number }} confirmed</title></head>
+<body style="margin:0;padding:0;background:#f7f2ea;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f7f2ea;">
+  <tr><td align="center" style="padding:32px 16px;">
+    <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;background:#ffffff;border:1px solid #d9d0c1;">
+      <tr><td style="padding:28px 32px 8px;font-family:Georgia,'Times New Roman',serif;font-size:13px;letter-spacing:0.2em;color:#8a6a34;text-transform:uppercase;">Samwab</td></tr>
+      <tr><td style="padding:0 32px;font-family:Georgia,'Times New Roman',serif;font-size:28px;color:#2b1712;">Order confirmed</td></tr>
+      <tr><td style="padding:16px 32px 0;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.5;color:#4f4e49;">
+        {% if first_name %}Dear {{ first_name }},{% else %}Hello,{% endif %}<br>
+        Thank you. Your order <strong style="color:#2b1712;">{{ order.order_number }}</strong> is confirmed and paid.
+      </td></tr>
+      <tr><td style="padding:24px 32px 0;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-family:Arial,Helvetica,sans-serif;font-size:15px;color:#4f4e49;border-top:1px solid #d9d0c1;">
+          <tr><td colspan="2" style="padding:14px 0 10px;font-family:Georgia,'Times New Roman',serif;font-size:18px;color:#2b1712;">{{ piece.title }}</td></tr>
+          <tr><td style="padding:4px 0;">Price</td><td align="right" style="padding:4px 0;">{{ item }}</td></tr>
+          {% if tax %}<tr><td style="padding:4px 0;">Sales tax</td><td align="right" style="padding:4px 0;">{{ tax }}</td></tr>{% endif %}
+          <tr><td style="padding:10px 0;border-top:1px solid #d9d0c1;color:#2b1712;"><strong>Paid today</strong></td><td align="right" style="padding:10px 0;border-top:1px solid #d9d0c1;color:#2b1712;"><strong>{{ total }}</strong></td></tr>
+        </table>
+      </td></tr>
+      <tr><td style="padding:16px 32px 0;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.5;color:#4f4e49;">
+        <strong style="color:#2b1712;">Delivery:</strong> you send your own courier to collect your piece. We will be in touch to arrange the collection.
+      </td></tr>
+      <tr><td style="padding:24px 32px;">
+        <a href="{{ order_url }}" style="display:inline-block;background:#2b1712;color:#ffffff;font-family:Arial,Helvetica,sans-serif;font-size:14px;text-decoration:none;padding:12px 22px;">Track your order</a>
+      </td></tr>
+      <tr><td style="padding:0 32px 28px;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.5;color:#8c857a;">
+        If anything is not right, {% if support_email %}reply to this email{% else %}contact us from your account{% endif %} and quote {{ order.order_number }}.<br><br>
+        {{ company }}
+      </td></tr>
+    </table>
+  </td></tr>
+</table>
+</body>
+</html>
