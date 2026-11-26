@@ -323,14 +323,53 @@ LOGGING: dict[str, Any] = {
 # ---------- Admin site (django-unfold; build E16) ----------
 # A plain-words admin for non-developers: a home page with the day's numbers and each
 # person's tasks, and a menu grouped by task in which each role sees its own screens.
+from django.templatetags.static import static  # noqa: E402
+
 from apps.platform.core.admin_menu import NAVIGATION as _ADMIN_NAVIGATION  # noqa: E402
+
+# Colours from the Figma design (PDF export, 24 Nov; build E17). The admin stays light
+# because the design has no dark version.
+_ESPRESSO, _CREAM, _SAND, _LINE, _GOLD = "#2b1712", "#f7f2ea", "#e8e0d2", "#d9d0c1", "#b08a4e"
 
 UNFOLD = {
     "SITE_TITLE": "Samwab admin",
     "SITE_HEADER": "Samwab",
     "SITE_SUBHEADER": "Shop admin",
     "SITE_SYMBOL": "diamond",
+    "SITE_ICON": lambda request: static("samwab_admin/monogram.svg"),
     "SITE_URL": None,
+    "THEME": "light",
+    "STYLES": [lambda request: static("samwab_admin/samwab.css")],
+    "COLORS": {
+        # Warm greys, from white through cream and sand to espresso.
+        "base": {
+            "50": "#fcfaf6",
+            "100": _CREAM,
+            "200": _SAND,
+            "300": _LINE,
+            "400": "#b3ab9e",
+            "500": "#8c857a",  # muted text
+            "600": "#4f4e49",  # body text
+            "700": "#3e3530",
+            "800": "#33231d",
+            "900": _ESPRESSO,  # headings
+            "950": "#1a0f03",
+        },
+        # Gold for highlights, espresso for buttons, the action bar and links.
+        "primary": {
+            "50": "#faf6ef",
+            "100": "#f3ebdd",
+            "200": "#e6d6b8",
+            "300": "#d4b98a",
+            "400": "#c4a26a",
+            "500": _GOLD,
+            "600": _ESPRESSO,
+            "700": "#24130f",
+            "800": "#1f100c",
+            "900": "#1a0f03",
+            "950": "#120a02",
+        },
+    },
     "DASHBOARD_CALLBACK": "apps.platform.core.admin_home.home",
     "SIDEBAR": {
         "show_search": False,
