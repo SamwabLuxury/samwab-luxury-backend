@@ -1,0 +1,19 @@
+{% autoescape off %}{% if first_name %}Dear {{ first_name }},{% else %}Hello,{% endif %}
+
+Thank you. Your order {{ order.order_number }} is confirmed and paid.
+
+{{ piece.title }}
+Price: {{ item }}{% if tax %}
+Sales tax: {{ tax }}{% endif %}
+Paid today: {{ total }}
+
+Delivery: you send your own courier to collect your piece. We will be in touch to
+arrange the collection.
+
+Track your order: {{ order_url }}
+
+If anything is not right, {% if support_email %}reply to this email{% else %}contact us from your account{% endif %} and quote {{ order.order_number }}.
+
+Samwab
+{{ company }}
+{% endautoescape %}
