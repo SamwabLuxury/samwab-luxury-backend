@@ -7,7 +7,7 @@ from apps.inventory.catalog.enums import SaleSource
 from apps.inventory.pieces.api.serializers import PublicPieceSerializer
 from apps.inventory.pieces.enums import AuthenticationBasis, ConditionGrade, VerificationStatus
 from apps.platform.core.api.money import MoneySerializer
-from apps.shop.listings.enums import AdjustmentDirection
+from apps.shop.listings.enums import AdjustmentDirection, ListingStatus
 from apps.shop.listings.models import Drop, Listing, ListingPriceAdjustment
 from apps.shop.listings.price_explainer import price_explainer
 
@@ -100,15 +100,25 @@ class PriceExplainerSerializer(serializers.Serializer[Any]):
 
 
 class ListingDetailSerializer(ListingSerializer):
-    """One listing, for its own page: a listing card plus the price explainer."""
+    """One listing, for its own page: a listing card plus the price explainer (a sold piece
+    keeps its page with `sold_at` and no price explainer, E19)."""
 
     price_explainer = serializers.SerializerMethodField()
 
-    class Meta(ListingSerializer.Meta):
-        fields = (*ListingSerializer.Meta.fields, "price_explainer")
+    sold_at = serializers.DateTimeField(
+        read_only=True,
+        allow_null=True,
+        help_text="When the piece sold; null while it is for sale. A sold piece keeps its "
+        "page (status `sold`) but is not offered anywhere else.",
+    )
 
-    @extend_schema_field(PriceExplainerSerializer)
+    class Meta(ListingSerializer.Meta):
+        fields = (*ListingSerializer.Meta.fields, "sold_at", "price_explainer")
+
+    @extend_schema_field(PriceExplainerSerializer(allow_null=True))
     def get_price_explainer(self, listing: Listing) -> Any:
+        if listing.status == ListingStatus.SOLD:
+            return None  # it helps a buyer decide; a sold piece is not for sale
         return PriceExplainerSerializer(price_explainer(listing)).data
 
 

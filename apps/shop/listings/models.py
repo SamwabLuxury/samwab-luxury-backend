@@ -61,6 +61,9 @@ class Listing(BaseModel):
     )
     published_at = models.DateTimeField(null=True, blank=True, editable=False)
     expires_at = models.DateTimeField(null=True, blank=True, editable=False)
+    sold_at = models.DateTimeField(
+        null=True, blank=True, editable=False, help_text="When a paid order sold it (E19)."
+    )
 
     class Meta:
         db_table = "listings"
