@@ -1,0 +1,31 @@
+/*
+ * Samwab admin: small additions to the django-unfold look (build E17).
+ * Colours are in settings (UNFOLD["COLORS"]); this file only covers what those
+ * cannot reach. Palette from the Figma design: espresso #2b1712, cream #f7f2ea,
+ * sand #e8e0d2, lines #d9d0c1, gold #b08a4e, body #4f4e49, muted #8c857a.
+ */
+
+/* The action menu on list pages (Publish, Withdraw, Retire...). Its choices are
+   drawn by the browser; with white bar text they came out white on grey and could
+   not be read. Dark text on white, whatever the computer's own colour setting. */
+#changelist-actions select {
+    color-scheme: light;
+}
+
+#changelist-actions select option,
+#changelist-actions select optgroup {
+    background-color: #ffffff;
+    color: #2b1712;
+}
+
+#changelist-actions select option:disabled {
+    color: #8c857a;
+}
+
+/* Headings in the shop's serif, as in the design. No web font is downloaded:
+   the first serif the computer has is used. */
+.samwab-serif {
+    font-family: "Cormorant Garamond", "Cormorant", Georgia, "Times New Roman", serif;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+}

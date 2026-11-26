@@ -14,7 +14,7 @@ person may do. ``numbers`` and ``tasks`` come from apps/platform/core/admin_home
 {% block content %}
 <div class="flex flex-col gap-8">
     <section>
-        <h2 class="font-semibold text-lg mb-4 text-font-important-light dark:text-font-important-dark">Today at a glance</h2>
+        <h2 class="samwab-serif text-2xl mb-4 text-font-important-light dark:text-font-important-dark">Today at a glance</h2>
         <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
             {% component "unfold/components/card.html" with title="Pieces for sale" %}
                 <p class="text-3xl font-semibold">{{ numbers.live_pieces }}</p>
@@ -36,7 +36,7 @@ person may do. ``numbers`` and ``tasks`` come from apps/platform/core/admin_home
     </section>
 
     <section>
-        <h2 class="font-semibold text-lg mb-4 text-font-important-light dark:text-font-important-dark">What would you like to do?</h2>
+        <h2 class="samwab-serif text-2xl mb-4 text-font-important-light dark:text-font-important-dark">What would you like to do?</h2>
         {% if tasks %}
         <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {% for task in tasks %}
