@@ -253,13 +253,13 @@ def test_staff_add_and_remove_adjustments_and_each_is_audited(admin_client: Clie
             {
                 "label": "Condition",
                 "direction": "subtract",
-                "amount_minor": "45000",
+                "amount_minor": "450.00",
                 "sort_order": "1",
             },
             {
                 "label": "Complete set",
                 "direction": "add",
-                "amount_minor": "30000",
+                "amount_minor": "300.00",
                 "sort_order": "2",
             },
         ),
@@ -281,7 +281,7 @@ def test_staff_add_and_remove_adjustments_and_each_is_audited(admin_client: Clie
                 "listing": str(listing.pk),
                 "label": "Condition",
                 "direction": "subtract",
-                "amount_minor": "40000",
+                "amount_minor": "400.00",
                 "sort_order": "1",
             },
             {
@@ -289,7 +289,7 @@ def test_staff_add_and_remove_adjustments_and_each_is_audited(admin_client: Clie
                 "listing": str(listing.pk),
                 "label": "Complete set",
                 "direction": "add",
-                "amount_minor": "30000",
+                "amount_minor": "300.00",
                 "sort_order": "2",
                 "DELETE": "on",
             },

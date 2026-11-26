@@ -9,10 +9,11 @@ from django.http import HttpRequest
 from django.utils.html import format_html
 
 from apps.platform.audit.models import AuditEvent
+from apps.platform.core.admin_look import ModelAdmin
 
 
 @admin.register(AuditEvent)
-class AuditEventAdmin(admin.ModelAdmin):  # type: ignore[type-arg]
+class AuditEventAdmin(ModelAdmin):  # type: ignore[type-arg]
     list_display = ("occurred_at", "actor", "action", "object_type", "object_id", "ip_address")
     list_filter = ("object_type", "action")
     list_select_related = ("actor",)

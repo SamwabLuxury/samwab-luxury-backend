@@ -16,7 +16,7 @@ from django.core.mail import EmailMessage, EmailMultiAlternatives
 from django.core.management import CommandError, call_command
 from django.test import override_settings
 
-from apps.platform.core.mail import ResendEmailBackend, ResendError
+from apps.platform.core.mail import ResendEmailBackend, ResendError, ResendUnreachable
 
 
 class FakeResend:
@@ -237,4 +237,55 @@ def test_check_email_explains_a_refusal(resend: FakeResend) -> None:
     resend.replies = [(403, {"name": "validation_error", "message": "verify a domain"})]
 
     with pytest.raises(CommandError, match="verify a domain"):
+        call_command("check_email", "lead@example.com")
+
+
+# ---------- E16: a slow or missing network is not a wrong key ----------
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        urllib.error.URLError(TimeoutError("timed out")),
+        TimeoutError("timed out"),
+        ConnectionResetError(),
+    ],
+)
+def test_a_timeout_or_dropped_line_is_reported_as_unreachable(
+    monkeypatch: pytest.MonkeyPatch, failure: Exception
+) -> None:
+    def flaky(request: Any, timeout: float) -> Any:
+        raise failure
+
+    monkeypatch.setattr("apps.platform.core.mail.urllib.request.urlopen", flaky)
+    monkeypatch.setattr("apps.platform.core.mail.time.sleep", lambda seconds: None)
+
+    with pytest.raises(ResendUnreachable):
+        backend().send_messages([EmailMessage("Hi", "x", "a@samwabluxury.com", ["b@example.com"])])
+
+
+@override_settings(RESEND_API_KEY="re_made_up_key")
+def test_check_email_blames_the_network_not_the_key_on_a_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def slow(request: Any, timeout: float) -> Any:
+        raise TimeoutError("timed out")
+
+    monkeypatch.setattr("apps.platform.core.mail.urllib.request.urlopen", slow)
+    monkeypatch.setattr("apps.platform.core.mail.time.sleep", lambda seconds: None)
+
+    with pytest.raises(CommandError) as raised:
+        call_command("check_email", "lead@example.com")
+
+    text = str(raised.value)
+    assert "Could not reach Resend" in text
+    assert "internet connection" in text
+    assert "key" not in text.lower()  # the key was never tested
+
+
+@override_settings(RESEND_API_KEY="re_made_up_key")
+def test_check_email_still_points_to_the_key_when_resend_refuses(resend: FakeResend) -> None:
+    resend.replies = [(401, {"name": "invalid_api_key", "message": "API key is invalid"})]
+
+    with pytest.raises(CommandError, match="Check the key"):
         call_command("check_email", "lead@example.com")

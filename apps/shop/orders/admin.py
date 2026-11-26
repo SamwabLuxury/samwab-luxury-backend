@@ -7,7 +7,19 @@ from django.contrib import admin
 from django.http import HttpRequest
 
 from apps.money.payments.models import Payment
+from apps.platform.core.admin_dollars import dollars_column
+from apps.platform.core.admin_look import ModelAdmin, TabularInline
 from apps.shop.orders.models import Order
+
+MONEY_LABELS = (
+    ("item", "item_minor"),
+    ("commission", "commission_minor"),
+    ("seller_share", "seller_share_minor"),
+    ("tax", "tax_minor"),
+    ("total", "total_minor"),
+    ("reservation_deposit", "reservation_deposit_minor"),
+)
+MONEY_COLUMNS = tuple(column for _, column in MONEY_LABELS)
 
 
 class ReadOnly:
@@ -21,17 +33,27 @@ class ReadOnly:
         return False
 
 
-class PaymentInline(ReadOnly, admin.TabularInline):  # type: ignore[type-arg]
+class PaymentInline(ReadOnly, TabularInline):  # type: ignore[type-arg]
     model = Payment
-    fields = ("provider_payment_id", "kind", "amount_minor", "status", "failure_reason")
+    fields = ("provider_payment_id", "kind", "amount", "status", "failure_reason")
     readonly_fields = fields
     extra = 0
+    amount = dollars_column("amount_minor", "Amount")
 
 
 @admin.register(Order)
-class OrderAdmin(ReadOnly, admin.ModelAdmin):  # type: ignore[type-arg]
-    list_display = ("order_number", "status", "buyer", "total_minor", "created_at")
+class OrderAdmin(ReadOnly, ModelAdmin):  # type: ignore[type-arg]
+    list_display = ("order_number", "status", "buyer", "total", "created_at")
     list_filter = ("status",)
     search_fields = ("order_number", "buyer__email")
-    exclude = ("shipping_address",)  # personal data; read it through the buyer if needed
+    # shipping_address is personal data: read it through the buyer if needed. The cents
+    # columns are shown in dollars below instead (E16).
+    exclude = ("shipping_address", *MONEY_COLUMNS)
+    readonly_fields = tuple(name for name, _ in MONEY_LABELS)
+    item = dollars_column("item_minor", "Piece price")
+    commission = dollars_column("commission_minor", "Our commission")
+    seller_share = dollars_column("seller_share_minor", "Seller's share")
+    tax = dollars_column("tax_minor", "Sales tax")
+    total = dollars_column("total_minor", "Total paid")
+    reservation_deposit = dollars_column("reservation_deposit_minor", "Reservation deposit")
     inlines = (PaymentInline,)

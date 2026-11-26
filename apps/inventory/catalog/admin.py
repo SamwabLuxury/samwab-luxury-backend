@@ -24,11 +24,13 @@ from apps.inventory.catalog.models import (
     ProductModel,
 )
 from apps.platform.audit import services as audit
+from apps.platform.core.admin_dollars import DollarsAdmin
+from apps.platform.core.admin_look import ModelAdmin, TabularInline
 from apps.platform.core.exceptions import AppError
 from apps.users.accounts.models import User
 
 
-class CatalogAdmin(admin.ModelAdmin):  # type: ignore[type-arg]
+class CatalogAdmin(ModelAdmin):  # type: ignore[type-arg]
     """Every catalog screen saves through the catalog service."""
 
     def save_model(self, request: HttpRequest, obj: Any, form: Any, change: bool) -> None:
@@ -62,12 +64,12 @@ class RetireOnlyAdmin(SluggedAdmin):
     def has_delete_permission(self, request: HttpRequest, obj: Any = None) -> bool:
         return False
 
-    @admin.action(description="Retire the selected rows")
+    @admin.action(description="Retire the selected rows", permissions=["change"])
     def retire_selected(self, request: HttpRequest, queryset: QuerySet[models.Model]) -> None:
         changed = services.set_active(queryset, is_active=False, by=_staff(request))
         self.message_user(request, f"Retired {changed}.")
 
-    @admin.action(description="Bring back the selected rows")
+    @admin.action(description="Bring back the selected rows", permissions=["change"])
     def restore_selected(self, request: HttpRequest, queryset: QuerySet[models.Model]) -> None:
         changed = services.set_active(queryset, is_active=True, by=_staff(request))
         self.message_user(request, f"Brought back {changed}.")
@@ -151,7 +153,7 @@ class MaterialAdmin(CatalogAdmin):
 # ---------- capture protocols ----------
 
 
-class CaptureShotInline(admin.TabularInline):  # type: ignore[type-arg]
+class CaptureShotInline(TabularInline):  # type: ignore[type-arg]
     """The shots of a protocol. They can change only while the protocol is a draft."""
 
     model = CaptureShot
@@ -182,7 +184,7 @@ class CaptureShotInline(admin.TabularInline):  # type: ignore[type-arg]
 
 
 @admin.register(CaptureProtocol)
-class CaptureProtocolAdmin(admin.ModelAdmin):  # type: ignore[type-arg]
+class CaptureProtocolAdmin(ModelAdmin):  # type: ignore[type-arg]
     """Write a draft, add its shots, then activate it. To change an active one, make a new draft."""
 
     list_display = ("__str__", "category", "product_model", "version", "status")
@@ -235,15 +237,17 @@ class CaptureProtocolAdmin(admin.ModelAdmin):  # type: ignore[type-arg]
             else:
                 self.message_user(request, done.format(protocol=protocol, result=result))
 
-    @admin.action(description="Activate the selected drafts")
+    @admin.action(description="Activate the selected drafts", permissions=["change"])
     def activate_selected(self, request: HttpRequest, queryset: QuerySet[CaptureProtocol]) -> None:
         self._each(request, queryset, services.activate_protocol, "Activated {protocol.label}.")
 
-    @admin.action(description="Retire the selected protocols")
+    @admin.action(description="Retire the selected protocols", permissions=["change"])
     def retire_selected(self, request: HttpRequest, queryset: QuerySet[CaptureProtocol]) -> None:
         self._each(request, queryset, services.retire_protocol, "Retired {protocol.label}.")
 
-    @admin.action(description="Make a new draft version of the selected protocols")
+    @admin.action(
+        description="Make a new draft version of the selected protocols", permissions=["add"]
+    )
     def new_draft_selected(self, request: HttpRequest, queryset: QuerySet[CaptureProtocol]) -> None:
         self._each(request, queryset, services.new_draft_from, "Made {result}.")
 
@@ -252,7 +256,8 @@ class CaptureProtocolAdmin(admin.ModelAdmin):  # type: ignore[type-arg]
 
 
 @admin.register(ComparableSale)
-class ComparableSaleAdmin(CatalogAdmin):
+class ComparableSaleAdmin(DollarsAdmin, CatalogAdmin):
+    dollar_fields = (("price_minor", "Price it sold for"),)
     list_display = ("sold_on", "brand", "product_model", "category", "price", "source")
     list_filter = ("source", "category", "brand")
     list_select_related = ("brand", "category", "category__parent", "product_model__brand")

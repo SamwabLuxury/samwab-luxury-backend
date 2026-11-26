@@ -7,6 +7,7 @@ class CatalogConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
     name = "apps.inventory.catalog"
     label = "catalog"
+    verbose_name = "Catalog and prices"
 
     def ready(self) -> None:
         from apps.inventory.catalog.permissions import ROLE_PERMISSIONS

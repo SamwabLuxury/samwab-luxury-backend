@@ -3,6 +3,8 @@ Django==6.1.3
 djangorestframework==3.18.3
 drf-spectacular==0.30.0
 django-environ==0.14.0
+# The admin site's look, menu and home page (build E16; MIT, Django 5.2 to 6.1).
+django-unfold==0.110.1
 # Sign-up and login; [mfa] adds two-step login (it brings qrcode and fido2).
 django-allauth[headless,mfa]==65.22.1
 argon2-cffi==25.1.0

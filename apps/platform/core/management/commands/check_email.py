@@ -10,7 +10,7 @@ from django.conf import settings
 from django.core.mail import EmailMessage
 from django.core.management.base import BaseCommand, CommandError, CommandParser
 
-from apps.platform.core.mail import ResendEmailBackend, ResendError
+from apps.platform.core.mail import ResendEmailBackend, ResendError, ResendUnreachable
 
 
 class Command(BaseCommand):
@@ -30,6 +30,12 @@ class Command(BaseCommand):
         )
         try:
             ResendEmailBackend(api_key=settings.RESEND_API_KEY).send_messages([message])
+        except ResendUnreachable as failure:
+            raise CommandError(
+                "Could not reach Resend: the request timed out or the connection dropped, "
+                "so nothing was sent and nothing was tested. Check your internet "
+                "connection, then run this again in a minute."
+            ) from failure
         except ResendError as failure:
             raise CommandError(
                 f"Resend said: {str(failure).rstrip('.')}. Check the key, and that the "

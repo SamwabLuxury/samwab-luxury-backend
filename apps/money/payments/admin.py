@@ -6,10 +6,11 @@ from django.contrib import admin
 from django.http import HttpRequest
 
 from apps.money.payments.models import StripeEvent
+from apps.platform.core.admin_look import ModelAdmin
 
 
 @admin.register(StripeEvent)
-class StripeEventAdmin(admin.ModelAdmin):  # type: ignore[type-arg]
+class StripeEventAdmin(ModelAdmin):  # type: ignore[type-arg]
     list_display = ("id", "type", "livemode", "received_at", "processed_at")
     list_filter = ("type", "livemode")
     search_fields = ("id",)

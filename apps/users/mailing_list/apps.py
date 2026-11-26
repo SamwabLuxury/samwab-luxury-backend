@@ -8,3 +8,9 @@ class MailingListConfig(AppConfig):
     name = "apps.users.mailing_list"
     label = "mailing_list"
     verbose_name = "mailing list"
+
+    def ready(self) -> None:
+        from apps.users.accounts.permissions import connect_role_permissions
+        from apps.users.mailing_list.permissions import ROLE_PERMISSIONS
+
+        connect_role_permissions(self, ROLE_PERMISSIONS)

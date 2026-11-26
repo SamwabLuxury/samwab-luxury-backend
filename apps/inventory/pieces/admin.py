@@ -23,12 +23,14 @@ from django.utils.html import format_html
 from apps.inventory.pieces import photos, services
 from apps.inventory.pieces.enums import CustodyStatus
 from apps.inventory.pieces.models import Media, Piece, PieceMaterial
+from apps.platform.core.admin_dollars import DollarsAdmin
+from apps.platform.core.admin_look import ModelAdmin, TabularInline
 from apps.platform.core.exceptions import AppError
 from apps.platform.core.storage import PhotoStorageError
 from apps.users.accounts.models import User
 
 
-class PieceMaterialInline(admin.TabularInline):  # type: ignore[type-arg]
+class PieceMaterialInline(TabularInline):  # type: ignore[type-arg]
     model = PieceMaterial
     extra = 1
     autocomplete_fields = ("material",)
@@ -69,7 +71,7 @@ class PhotoForm(forms.ModelForm):  # type: ignore[type-arg]
         return data
 
 
-class PhotoInline(admin.TabularInline):  # type: ignore[type-arg]
+class PhotoInline(TabularInline):  # type: ignore[type-arg]
     model = Media
     form = PhotoForm
     extra = 1
@@ -86,7 +88,8 @@ class PhotoInline(admin.TabularInline):  # type: ignore[type-arg]
 
 
 @admin.register(Piece)
-class PieceAdmin(admin.ModelAdmin):  # type: ignore[type-arg]
+class PieceAdmin(DollarsAdmin, ModelAdmin):  # type: ignore[type-arg]
+    dollar_fields = (("acquisition_cost_minor", "What we paid for it"),)
     list_display = (
         "title",
         "brand",

@@ -21,7 +21,7 @@ files = ["apps", "configurations"]
 exclude = ['/migrations/']
 
 [[tool.mypy.overrides]]
-module = ["environ", "allauth.*", "jsonschema.*", "cloudinary.*"]
+module = ["environ", "allauth.*", "jsonschema.*", "cloudinary.*", "unfold.*"]
 ignore_missing_imports = true
 
 [tool.django-stubs]
@@ -32,6 +32,11 @@ DJANGO_SETTINGS_MODULE = "configurations.settings.test"
 testpaths = ["apps"]
 python_files = ["test_*.py"]
 addopts = "-ra --strict-markers --strict-config"
+filterwarnings = [
+    # django-unfold 0.110.1 overrides a Django 6.1 admin hook in the old way. It is
+    # their code, not ours, and works until Django 7. Remove when unfold updates.
+    "ignore:Overriding get_action_choices\\(\\) without the 'action_location' parameter",
+]
 
 [tool.coverage.run]
 source = ["apps"]
