@@ -190,7 +190,11 @@ def listing_pages(viewer: User | None) -> QuerySet[Listing]:
 
 
 def drops_with_counts() -> QuerySet[Drop]:
-    return Drop.objects.annotate(lot_count=Count("lots"))
+    """Drops with how many lots they have and how many of those have sold (E20)."""
+    return Drop.objects.annotate(
+        lot_count=Count("lots"),
+        sold_count=Count("lots", filter=Q(lots__listing__status=ListingStatus.SOLD)),
+    )
 
 
 def running_drops() -> QuerySet[Drop]:
@@ -198,13 +202,18 @@ def running_drops() -> QuerySet[Drop]:
     return drops_with_counts().filter(closes_at__gt=Now()).order_by("public_at", "id")
 
 
+def closed_drops() -> QuerySet[Drop]:
+    """Drops that have closed, for the recap (E20). Paged newest first by the view."""
+    return drops_with_counts().filter(closes_at__lte=Now())
+
+
 def drop_lots(drop: Drop, viewer: User | None) -> QuerySet[Listing]:
-    """The lots of a drop that this person may see now, in lot order. A closed drop
-    shows none: its unsold lots are in the normal shop."""
-    if drop.phase() == "closed":
-        return Listing.objects.none()
+    """The lots of a drop that this person may see now, in lot order: for sale or sold,
+    so a lot that sells stays on its page marked sold, and a closed drop shows what
+    sold (E20). Withdrawn lots are left out. Before a viewer may see the lots (the
+    drop's early-hours rule), she sees none, sold or not."""
     return (
-        visible_listings(viewer)
+        listing_pages(viewer)
         .filter(drop_lot__drop=drop)
         .select_related("drop_lot")
         .order_by("drop_lot__lot_number")

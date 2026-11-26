@@ -183,6 +183,9 @@ class DropSerializer(serializers.ModelSerializer[Any]):
     early_access_at = serializers.DateTimeField(source="early_at")
     opens_at = serializers.DateTimeField(source="public_at")
     lot_count = serializers.IntegerField(help_text="How many lots it has, sold or not.")
+    sold_count = serializers.IntegerField(
+        help_text='How many of its lots have sold, for "What sold · 8 of 8" (E20).'
+    )
 
     class Meta:
         model = Drop
@@ -195,6 +198,7 @@ class DropSerializer(serializers.ModelSerializer[Any]):
             "opens_at",
             "closes_at",
             "lot_count",
+            "sold_count",
         )
 
     @extend_schema_field(serializers.ChoiceField(choices=["upcoming", "members", "open", "closed"]))
@@ -204,9 +208,12 @@ class DropSerializer(serializers.ModelSerializer[Any]):
 
 class LotSerializer(ListingSerializer):
     lot_number = serializers.IntegerField(source="drop_lot.lot_number")
+    sold_at = serializers.DateTimeField(
+        read_only=True, allow_null=True, help_text="When the lot sold; null while for sale."
+    )
 
     class Meta(ListingSerializer.Meta):
-        fields = (*ListingSerializer.Meta.fields, "lot_number")
+        fields = (*ListingSerializer.Meta.fields, "lot_number", "sold_at")
 
 
 class DropPageSerializer(DropSerializer):
@@ -214,7 +221,8 @@ class DropPageSerializer(DropSerializer):
         help_text="True for a logged-in, confirmed mailing-list member."
     )
     lots = serializers.SerializerMethodField(
-        help_text="The lots the viewer may see now, in lot order (none for a closed drop)."
+        help_text="The lots the viewer may see now, in lot order: for sale (`status` live) "
+        "or sold (`status` sold, with `sold_at`). Empty before the viewer may see them."
     )
 
     class Meta(DropSerializer.Meta):

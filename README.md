@@ -801,8 +801,8 @@ fail at once and never reach the database.
 | `POST /api/v1/mailing-list/` | Join the mailing list (sends a confirmation email; always 202) | No |
 | `POST /api/v1/mailing-list/confirm/` | Confirm with the token from the email | No |
 | `POST /api/v1/mailing-list/unsubscribe/` | Leave the list with the token from any list email | No |
-| `GET /api/v1/drops/` | Running and coming drops, soonest first, with their `phase` | No |
-| `GET /api/v1/drops/{number}/` | A drop's page and the lots the viewer may see now | No (log in for early access) |
+| `GET /api/v1/drops/` | Running and coming drops, soonest first, with their `phase` and `sold_count`; `?phase=closed` for past drops | No |
+| `GET /api/v1/drops/{number}/` | A drop's page and the lots the viewer may see now, for sale or sold (a closed drop's recap) | No (log in for early access) |
 | `GET /api/v1/docs/` | A page to browse and try every endpoint | No |
 | `GET /api/v1/schema/` | The OpenAPI file. Import it into Postman. Add `?format=json` for JSON | No |
 
@@ -1256,13 +1256,18 @@ on a schedule:
 | `upcoming` | until `early_access_at` | nobody (the drop itself is listed) |
 | `members` | `early_access_at` (`opens_at` minus `DROP_EARLY_HOURS`, 24) to `opens_at` | logged-in, confirmed mailing-list members only |
 | `open` | `opens_at` to `closes_at` | everyone, on the drop's page |
-| `closed` | after `closes_at` | the unsold lots are in the normal shop |
+| `closed` | after `closes_at` | the unsold lots are in the normal shop; the drop page is its recap |
 
 - `GET /api/v1/drops/`: drops not yet closed, soonest first: `number`, `name`,
-  `description`, `phase`, `early_access_at`, `opens_at`, `closes_at`, `lot_count`.
+  `description`, `phase`, `early_access_at`, `opens_at`, `closes_at`, `lot_count`,
+  and `sold_count` (build E20). `?phase=closed` lists past drops instead, most
+  recently closed first, for the home page's recap.
 - `GET /api/v1/drops/{number}/`: the same plus `you_have_early_access` and `lots`:
-  the shop cards (plus `lot_number`) of the lots the viewer may see now, in order.
-  Send the session cookie so a list member gets her early lots.
+  the shop cards (plus `lot_number` and `sold_at`) of the lots the viewer may see
+  now, in order, **for sale or sold** (build E20): a lot that sells stays on the page
+  with `status: "sold"`, and a closed drop's page lists every lot for "What sold · 8
+  of 8". Withdrawn lots are left out. Before the viewer may see the lots she sees
+  none, sold or not. Send the session cookie so a list member gets her early lots.
 - The same rule applies everywhere: `GET /api/v1/listings/` leaves out the lots of
   any drop that has not closed; `GET /api/v1/listings/{id}/` is 404 for a lot the
   viewer may not see yet; saving it is 404; buying it is 422 `drop_not_open`.
@@ -1617,7 +1622,7 @@ On your own machine, only `DJANGO_SECRET_KEY` is needed.
 The README is updated in every build.
 
 
-Last build: E19, a sold piece keeps its page.
+Last build: E20, drop recaps and sold lots.
 
 ## Build history
 
@@ -1661,6 +1666,7 @@ One line per build, newest last. Each build is one feature, merged into `dev`.
 | E17 | 26 Nov 2026 | The admin in the shop's own colours: Figma palette (espresso, cream, sand, gold) in `UNFOLD["COLORS"]`, always light, the "S" mark, serif headings; the action menu readable on dark-mode computers; pieces section named "Stock" |
 | E18 | 26 Nov 2026 | Shop totals and filter counts: `count` on every page of `GET /api/v1/listings/`; `GET /api/v1/listings/facets/` (total, houses, top categories, each leaving out its own filter); one filter helper for the list, the count and the facets; counted cursor paging |
 | E19 | 26 Nov 2026 | A sold piece keeps its page: `GET /api/v1/listings/{id}/` answers sold listings (`status: "sold"`, `sold_at`, no price explainer) instead of 404; `listings.sold_at` set when an order sells it (migration `listings.0006`, filled in for pieces already sold from their paid order); everything that offers a piece still sees live ones only |
+| E20 | 26 Nov 2026 | Drop recaps and sold lots: drop pages list lots for sale or sold (`sold_at`), so a closed drop's page is its recap; `sold_count` on every drop; `GET /api/v1/drops/?phase=closed` lists past drops, newest first; withdrawn lots stay hidden; the early-hours rule unchanged |
 
 Builds run in the order the roadmap sets, so numbers can skip: builds 12 to 14 came
 before 06 to 11 to start on what buyers see, then 07, 08, the 08a tidy-up and build 01 (production deploy).
