@@ -222,13 +222,14 @@ def test_a_drop_page_by_number(client: Client) -> None:
     assert client.get(f"{DROPS}99/").status_code == 404
 
 
-def test_a_closed_drop_page_still_answers_without_lots(client: Client) -> None:
+def test_a_closed_drop_page_is_its_recap(client: Client) -> None:
     lot(make_drop("closed"))
 
     page = client.get(f"{DROPS}7/").json()
 
     assert page["phase"] == "closed"
-    assert page["lots"] == []  # its unsold pieces are in the normal shop now
+    # Since E20 the recap lists every lot; an unsold one is also in the normal shop.
+    assert [row["status"] for row in page["lots"]] == ["live"]
 
 
 def test_the_drop_page_costs_a_fixed_number_of_queries(
