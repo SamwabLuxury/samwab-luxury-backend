@@ -25,7 +25,7 @@ def order_for(user: User, order_id: UUID | str) -> Order | None:
 
 def _with_details(orders: QuerySet[Order]) -> QuerySet[Order]:
     return orders.select_related(
-        "piece__brand", "piece__category", "piece__product_model"
+        "piece__brand", "piece__category", "piece__product_model", "piece__passport"
     ).prefetch_related(
         Prefetch("piece__photos", queryset=Media.objects.order_by("sort_order", "id")),
         "payments__refunds",

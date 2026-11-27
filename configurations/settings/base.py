@@ -55,6 +55,7 @@ LOCAL_APPS = [
     "apps.platform.idempotency",
     "apps.inventory.catalog",
     "apps.inventory.pieces",
+    "apps.inventory.passports",
     "apps.shop.listings",
     "apps.users.addresses",
     "apps.users.mailing_list",

@@ -12,6 +12,8 @@ from apps.users.accounts import roles
 from apps.users.accounts.permissions import Grants
 
 ROLE_PERMISSIONS: Grants = {
+    # Reviewers find pieces to verify on the piece list (build 15).
+    roles.REVIEWER: {"piece": ("view",)},
     roles.INTAKE_STAFF: {
         "piece": ("add", "change", "view"),
         "piecematerial": ("add", "change", "delete", "view"),

@@ -12,6 +12,7 @@ urlpatterns: list[URLPattern | URLResolver] = [
     path("api/v1/", include("apps.platform.core.api.urls")),
     path("api/v1/", include("apps.users.accounts.api.urls")),
     path("api/v1/", include("apps.inventory.catalog.api.urls")),
+    path("api/v1/", include("apps.inventory.passports.api.urls")),
     path("api/v1/", include("apps.shop.listings.api.urls")),
     path("api/v1/", include("apps.users.addresses.api.urls")),
     path("api/v1/", include("apps.users.mailing_list.api.urls")),

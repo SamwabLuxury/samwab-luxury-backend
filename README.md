@@ -246,6 +246,24 @@ step is an admin screen, so it works the same on the live site (no shell needed)
    `/api/v1/listings/<id>/`. On the listing's page, **Price explainer: adjustments**
    takes lines such as "Complete set", **Add**, `300.00`.
 
+### Verify a piece and issue its passport
+
+1. Give a staff member the `reviewer` role (or log in as a superuser). On the piece
+   list (`/admin/pieces/piece/`), tick the piece and choose
+   **Verified authentic: issue the passport** (or **Not authentic**). The result is
+   recorded once and cannot change. Verifying issues the passport at the same moment:
+   a number printed on the card (`Nº 0000 01`) and a 10-character code for the QR link.
+2. **Condition report** (`intake_staff`): `/admin/passports/conditionreport/add/`, pick
+   the piece, the grade and a summary, and type the flaws one per line:
+   `corner_rub | minor | Base, front left | Light rubbing.` The report's grade becomes
+   the piece's grade. Reports are never edited: a new look is a new report.
+3. **Restoration** (optional): `/admin/passports/restoration/add/`, what was done, by
+   whom, when and what it cost (the cost stays with staff).
+4. Open `http://127.0.0.1:8000/api/v1/passports/<code>/` (the code is on
+   **Passports**, `/admin/passports/passport/`). The piece's listing now shows
+   `passport_code` and `passport_number` too. Untick **Shown to the public** on the
+   passport's page to hide it.
+
 ### Staff roles and the audit log
 
 1. Open http://127.0.0.1:8000/admin/audit/auditevent/. Every change you just made
@@ -722,6 +740,7 @@ apps/                 our code: apps grouped by area; each folder inside a group
     catalog/          brands, categories, designs, materials, capture protocols, comparable sales
       models/         one file per subject; import models from apps.inventory.catalog.models
     pieces/           one row per physical object: materials, photos, custody and verification
+    passports/        passports of verified pieces, condition reports, restorations
       photos.py       checks an uploaded photo and removes its hidden data before it is saved
       api/serializers.py  the public view of a piece (no serial codes, costs or owners)
   shop/               selling
@@ -777,6 +796,7 @@ Other files at the top of the repository:
 | `legal` | Legal texts in numbered versions (terms of service, privacy policy, returns policy and more), written and published by staff in the admin; who accepted which version, when and from where (append-only); consents to marketing and to photos used for model training. |
 | `listings` | Listings: a piece offered for sale at an asking price, with its price history. Staff list house stock in the admin site; buyers browse live listings through the public API. |
 | `pieces` | Pieces: one row per physical object Samwab holds, sells or has checked, with its materials, its photos, its custody status (where it is) and its verification status (is it authentic). Staff register pieces in the admin site. |
+| `passports` | Passports: a verified piece's public record, with a number printed on the card and an unguessable code for the QR link; condition reports (grade, summary, flaws with their photos) and restorations. Verifying a piece issues its passport. |
 | `core` | Shared building blocks: IDs, `BaseModel`, `Money`, policy values, errors, paging, request IDs, the API description and the health endpoint. |
 
 ## Shared building blocks
@@ -1077,6 +1097,44 @@ They never appear in the audit log, and `str(address)` shows only the label and 
   The admin list is read-only: people join and leave only through the emails.
 - On the live site, emails still go to the Render log (`DJANGO_EMAIL_TO_LOGS`)
   until the Resend build.
+
+### Passports
+
+Build 15, app `apps/inventory/passports`. Tables `passports`, `condition_reports` and
+`restorations` as in the data model (`condition_reports.model_version_id` waits for
+the model builds; `supporting_documents`, the scans of brand cards and lab reports,
+waits for private file storage).
+
+- **Issued by verifying.** `passports.services.verify(piece)` records the check result
+  (`pieces.services.set_verification`) and issues the passport in one transaction, so
+  only verified pieces have one. Admin actions on the piece list: **Verified
+  authentic: issue the passport** and **Not authentic**, for people with
+  `passports.verify_passport` (the `reviewer` role and superusers). A result is
+  recorded once.
+- **Number and code.** `passport_number` counts up from 1 (the next number after the
+  highest; two at once: the unique index refuses one, which takes the number after).
+  `printed_number` is how the card shows it: at least six digits, the last two set
+  apart (`0042 17`). `public_code` is 10 characters from `23456789ABCDEFGHJKLMNPQRSTUVWXYZ`
+  (no 0/O or 1/I), found in any letter case. `is_public` hides a passport.
+- **Condition reports:** grade, summary and `flaws`, a list of
+  `{type, severity, where, note, photo_id}`. `type` is from the category's
+  `flaw_types` (any lowercase code when it lists none); `severity` minor, moderate or
+  major; `where` up to 80 characters; `note` up to 300; `photo_id` one of the piece's
+  own photos. The newest report sets the piece's `condition_grade`. Never changed or
+  deleted. Staff type flaws one per line: `type | severity | where | note`.
+- **Restorations:** description, who, when and cost (dollars in the admin; never
+  public).
+- `GET /api/v1/passports/{public_code}/` (no login, no cookies): `passport_number`,
+  `printed_number`, `public_code`, `issued_at`, `piece` (the public piece, as in
+  listings), `owner_display` ("Samwab" for house stock, else first name and initial,
+  or "Private owner"), `condition_reports` (newest first, each flaw with its photo),
+  `restorations` (no cost), and `ownership_history` and `certificates`, empty until
+  builds 17 and 29. 404 for an unknown code, a hidden passport or a piece not
+  verified.
+- Listings and orders: the public piece gains `passport_code` and `passport_number`
+  (null without a public passport), with no extra query.
+- Roles: `reviewer` verifies (and views pieces); `intake_staff` add condition reports,
+  add and change restorations, and may hide a passport.
 
 ### Legal texts
 
@@ -1751,7 +1809,7 @@ On your own machine, only `DJANGO_SECRET_KEY` is needed.
 The README is updated in every build.
 
 
-Last build: 11, legal documents.
+Last build: 15, passports.
 
 ## Build history
 
@@ -1799,6 +1857,7 @@ One line per build, newest last. Each build is one feature, merged into `dev`.
 | E21 | 26 Nov 2026 | Order confirmation email: one email to the buyer when an order is paid (piece, price, sales tax when charged, paid today, own courier, "Track your order", "SAMWAB Luxury, LLC"), plain and formatted; sent after the payment is saved and only once (`confirmation_sent_at`); a mail outage never undoes a payment, and `send_order_confirmations` sends what was missed; optional `DJANGO_SUPPORT_EMAIL` for replies |
 | E22 | 27 Nov 2026 | Sales tax: with `DJANGO_SALES_TAX_ENABLED` (off by default), checkout asks Stripe Tax for the tax at the delivery address, adds it on top of the price, and attaches the calculation to the payment so Stripe records the tax and reverses it on refunds; 422 `tax_address_invalid` for an address Stripe cannot place; `tax_calculation_id` on the order, shown in the admin |
 | 11 | 27 Nov 2026 | Legal documents: new app `apps/users/legal`, tables `legal_documents` (numbered versions, written and published by staff, words never changed once published), `terms_acceptances` (append-only, with IP address and browser; PostgreSQL trigger) and `consents`; placeholder drafts of the terms, privacy and returns policy; `GET /api/v1/legal-documents/` and `/{kind}/`, `POST /api/v1/me/legal-acceptances/`, `GET`/`PUT`/`DELETE /api/v1/me/consents/`; `terms_accepted` at sign-up; `accept_terms` in `next_steps`; checkout 422 `terms_not_accepted` once a text is published |
+| 15 | 27 Nov 2026 | Passports: new app `apps/inventory/passports`, tables `passports` (number printed on the card, unguessable QR code, hide switch), `condition_reports` (grade, summary, flaws with photos; never edited; sets the piece's grade) and `restorations`; reviewers verify pieces in the admin, which issues the passport; `GET /api/v1/passports/{public_code}/`; `passport_code` and `passport_number` on the public piece |
 
 Builds run in the order the roadmap sets, so numbers can skip: builds 12 to 14 came
 before 06 to 11 to start on what buyers see, then 07, 08, the 08a tidy-up and build 01 (production deploy).
