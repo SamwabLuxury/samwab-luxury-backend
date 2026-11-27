@@ -49,7 +49,13 @@ class OrderAdmin(ReadOnly, ModelAdmin):  # type: ignore[type-arg]
     # shipping_address is personal data: read it through the buyer if needed. The cents
     # columns are shown in dollars below instead (E16).
     exclude = ("shipping_address", *MONEY_COLUMNS)
-    readonly_fields = tuple(name for name, _ in MONEY_LABELS)
+    # Fields the code alone sets (editable=False) are shown only when listed here: the
+    # Stripe Tax calculation behind the tax (E22) and when the confirmation went (E21).
+    readonly_fields = (
+        *(name for name, _ in MONEY_LABELS),
+        "tax_calculation_id",
+        "confirmation_sent_at",
+    )
     item = dollars_column("item_minor", "Piece price")
     commission = dollars_column("commission_minor", "Our commission")
     seller_share = dollars_column("seller_share_minor", "Seller's share")

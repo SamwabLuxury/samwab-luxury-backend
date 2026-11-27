@@ -1121,7 +1121,7 @@ from what the browser says.**
 - `GET /api/v1/orders/` (yours as buyer; `?role=seller` for your sales;
   `?status=paid`), `GET /api/v1/orders/{id}/` (404 if you are neither buyer nor
   seller), `POST /api/v1/orders/{id}/cancel/` (buyer only, while waiting).
-- The order shows `item`, `tax` (0 until Stripe Tax), `total`, `amount_due`,
+- The order shows `item`, `tax` (see "Sales tax" below), `total`, `amount_due`,
   `pay_by` (the hold) and a `timeline`. The seller sees `seller_share` and
   `commission` instead of `tax` and `amount_due`.
 - `order_number` is `YYMM-NNNN`, such as `2611-0042`: year and month (UTC), then a
@@ -1145,6 +1145,7 @@ from what the browser says.**
 | The buyer walks away | After 15 minutes (`CHECKOUT_HOLD` in `apps/platform/core/policy.py`) the order is cancelled (`hold_expired`) and its payment cancelled: when the next buyer comes, or by `python manage.py expire_orders` |
 | Money arrives after the order closed (or after the listing was withdrawn) | Refunded in full at once (`missed_deadline`); the order becomes `refunded`; finance sees a warning in the logs |
 | Cancelling just as the payment succeeds | The order ends `paid` and the cancel answers 409 `order_already_paid` |
+| Sales tax on, and Stripe cannot place the delivery address | 422 `tax_address_invalid` ("check the state and the ZIP or postal code"); nothing is saved and the order number is given back |
 
 Statuses (`apps/shop/orders/state.py`): `pending_payment` → `paid` or `cancelled`;
 `cancelled` → `refunded`. A paid order marks its listing `sold`. While an order
@@ -1152,6 +1153,32 @@ waits, the listing shows `reserved_until` (the hold) in browse, and staff cannot
 withdraw it (409 `listing_held`). Orders, payments and refunds are read-only in
 the admin site (superusers). Not yet: the piece's owner does not change (the
 ownership ledger comes later), and delivery, intake and returns are later builds.
+
+**Sales tax (build E22):** the owner's answers (D46, D67, D69): prices are shown
+before tax and tax is added at checkout from the buyer's delivery address ("the
+normal usual US way"); the company (SAMWAB Luxury, LLC) is registered in Illinois
+and files the tax itself; buyers outside the US pay no US sales tax (duties are
+theirs on delivery). It is **off** until Stripe Tax is set up
+(`DJANGO_SALES_TAX_ENABLED`, default `false`); while off, `tax` is 0 as before.
+
+When on, `POST /api/v1/orders/` asks Stripe Tax for the tax on the piece's price at
+the chosen address (one calculation per order, `tax_behavior` exclusive, tax code
+`DJANGO_SALES_TAX_CODE`, default `txcd_99999999` "General - Tangible Goods"), saves
+it as the order's `tax`, and starts the payment for `total` = price + tax with the
+calculation attached (`hooks.inputs.tax.calculation`). That is Stripe's "basic"
+Stripe Tax with PaymentIntents: when the payment succeeds Stripe records the tax
+transaction for her filing reports, and refunds reverse it, with no code of ours.
+Stripe Tax only charges tax where a registration is added in the dashboard, so New
+York or Lagos addresses pay 0 until she registers there; adding a state is a
+dashboard change, not a build. Staff see the tax and its calculation id
+(`taxcalc_...`) on the order page in the admin.
+
+**To switch it on (sandbox first):** in the Stripe dashboard, Tax: switch Stripe
+Tax on, enter the company's address as the head office, and add the Illinois
+registration. Then set `DJANGO_SALES_TAX_ENABLED=true` in `.env` (and later on
+Render) and place a test order to a Chicago address: the answer shows `tax`, and
+after paying, the order appears under Tax, Transactions in the dashboard. Sandbox
+calculations are limited to 1,000 a day.
 
 **Order confirmation email (build E21):** when Stripe's confirmed payment makes an
 order `paid`, the buyer gets one email (Figma "Email 01 · Order confirmed"): the order
@@ -1624,6 +1651,8 @@ Servers use `configurations.settings.production` (or `staging`).
 | `RESEND_API_KEY` | production; optional on your machine | Resend's API key (`re_...`). On the live site every email then goes through Resend. Never in Git or chat |
 | `DJANGO_EMAIL_TO_LOGS` | production, only while there is no `RESEND_API_KEY` | `true` writes emails to the logs instead of sending them; ignored once `RESEND_API_KEY` is set |
 | `DJANGO_FRONTEND_URL` | staging, production | The web app's address, used for links in emails. Default `http://localhost:3000` |
+| `DJANGO_SALES_TAX_ENABLED` | staging, production, once Stripe Tax is set up | `true` adds sales tax from Stripe Tax at checkout. Default `false` (no tax) |
+| `DJANGO_SALES_TAX_CODE` | optional | Stripe's product tax code for what we sell. Default `txcd_99999999` (General - Tangible Goods) |
 | `DJANGO_ORDER_PAGE_URL` | optional | The "Track your order" link in order emails; `{order_id}` and `{order_number}` are filled in. Default `<DJANGO_FRONTEND_URL>/account/orders/{order_id}` |
 | `DJANGO_COMPANY_LEGAL_NAME` | optional | The company's legal name, at the foot of order emails. Default `SAMWAB Luxury, LLC` |
 | `DJANGO_SUPPORT_EMAIL` | optional | Where buyers' replies to order emails go, such as `care@samwabluxury.com`. Empty: no reply address |
@@ -1639,7 +1668,7 @@ On your own machine, only `DJANGO_SECRET_KEY` is needed.
 The README is updated in every build.
 
 
-Last build: E21, order confirmation email.
+Last build: E22, sales tax.
 
 ## Build history
 
@@ -1685,6 +1714,7 @@ One line per build, newest last. Each build is one feature, merged into `dev`.
 | E19 | 26 Nov 2026 | A sold piece keeps its page: `GET /api/v1/listings/{id}/` answers sold listings (`status: "sold"`, `sold_at`, no price explainer) instead of 404; `listings.sold_at` set when an order sells it (migration `listings.0006`, filled in for pieces already sold from their paid order); everything that offers a piece still sees live ones only |
 | E20 | 26 Nov 2026 | Drop recaps and sold lots: drop pages list lots for sale or sold (`sold_at`), so a closed drop's page is its recap; `sold_count` on every drop; `GET /api/v1/drops/?phase=closed` lists past drops, newest first; withdrawn lots stay hidden; the early-hours rule unchanged |
 | E21 | 26 Nov 2026 | Order confirmation email: one email to the buyer when an order is paid (piece, price, sales tax when charged, paid today, own courier, "Track your order", "SAMWAB Luxury, LLC"), plain and formatted; sent after the payment is saved and only once (`confirmation_sent_at`); a mail outage never undoes a payment, and `send_order_confirmations` sends what was missed; optional `DJANGO_SUPPORT_EMAIL` for replies |
+| E22 | 27 Nov 2026 | Sales tax: with `DJANGO_SALES_TAX_ENABLED` (off by default), checkout asks Stripe Tax for the tax at the delivery address, adds it on top of the price, and attaches the calculation to the payment so Stripe records the tax and reverses it on refunds; 422 `tax_address_invalid` for an address Stripe cannot place; `tax_calculation_id` on the order, shown in the admin |
 
 Builds run in the order the roadmap sets, so numbers can skip: builds 12 to 14 came
 before 06 to 11 to start on what buyers see, then 07, 08, the 08a tidy-up and build 01 (production deploy).

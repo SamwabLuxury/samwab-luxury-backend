@@ -21,3 +21,14 @@ class WebhookSignatureError(AppError):
     status_code = 400
     code = "webhook_signature_invalid"
     message = "The webhook signature could not be verified."
+
+
+class TaxAddressError(AppError):
+    """Stripe Tax could not place the delivery address (``customer_tax_location_invalid``),
+    or there is no address to work tax out from. HTTP 422 (build E22)."""
+
+    code = "tax_address_invalid"
+    message = (
+        "We couldn't work out sales tax for this address, so nothing was charged. "
+        "Please check the state and the ZIP or postal code, then try again."
+    )

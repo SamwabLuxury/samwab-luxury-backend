@@ -180,6 +180,13 @@ MAILING_LIST_UNSUBSCRIBE_URL = f"{FRONTEND_URL}/mailing-list/unsubscribe/{{token
 # (the lead, 26 Nov: "SAMWAB Luxury, LLC", Illinois).
 ORDER_PAGE_URL = env("DJANGO_ORDER_PAGE_URL", default=f"{FRONTEND_URL}/account/orders/{{order_id}}")
 COMPANY_LEGAL_NAME = env("DJANGO_COMPANY_LEGAL_NAME", default="SAMWAB Luxury, LLC")
+# Sales tax (build E22; D46, D67, D69): Stripe Tax works it out from the delivery
+# address and adds it on top of the price. Off until Stripe Tax is set up in the
+# Stripe dashboard (head office address, Illinois registration); then set
+# DJANGO_SALES_TAX_ENABLED=true. The tax code tells Stripe what is sold:
+# txcd_99999999 is "General - Tangible Goods".
+SALES_TAX_ENABLED = env.bool("DJANGO_SALES_TAX_ENABLED", default=False)
+SALES_TAX_CODE = env("DJANGO_SALES_TAX_CODE", default="txcd_99999999")
 # Where buyers' replies to order emails go. Empty: emails come from no-reply only and
 # ask buyers to write in from their account instead.
 SUPPORT_EMAIL = env("DJANGO_SUPPORT_EMAIL", default="")
