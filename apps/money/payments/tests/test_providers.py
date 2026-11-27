@@ -1,11 +1,17 @@
 """The payment provider interface: Stripe, and the fake used by tests."""
 
+from typing import Any
+
 import pytest
 from django.test import override_settings
 
-from apps.money.payments.exceptions import PaymentProviderError, WebhookSignatureError
+from apps.money.payments.exceptions import (
+    PaymentProviderError,
+    TaxAddressError,
+    WebhookSignatureError,
+)
 from apps.money.payments.providers import get_provider
-from apps.money.payments.providers.base import ProviderPayment
+from apps.money.payments.providers.base import ProviderPayment, TaxAddress, TaxQuote
 from apps.money.payments.providers.fake import FakeProvider
 from apps.money.payments.providers.stripe import StripeProvider
 from apps.money.payments.tests.stripe_fakes import (
@@ -192,3 +198,113 @@ def test_a_refused_refund_becomes_our_error() -> None:
 
     with pytest.raises(PaymentProviderError):
         stripe_with(http).refund_payment("pi_test_123", Money(500), idempotency_key="refund-1")
+
+
+# ---------- Sales tax (build E22): Stripe Tax calculations attached to the payment ----------
+
+CHICAGO = TaxAddress(
+    line1="233 S Wacker Dr",
+    line2="",
+    city="Chicago",
+    state="IL",
+    postal_code="60606",
+    country="US",
+)
+
+
+def tax_calculation(**fields: Any) -> dict[str, Any]:
+    return {
+        "id": "taxcalc_test_1",
+        "object": "tax.calculation",
+        "amount_total": 1_598_625,
+        "currency": "usd",
+        "tax_amount_exclusive": 148_625,
+        "tax_amount_inclusive": 0,
+        **fields,
+    }
+
+
+def test_working_out_tax_sends_stripe_the_price_address_and_tax_code() -> None:
+    http = RecordingHTTPClient(tax_calculation())
+
+    quote = stripe_with(http).calculate_tax(
+        Money(1_450_000),
+        address=CHICAGO,
+        reference="2611-0042",
+        tax_code="txcd_99999999",
+        idempotency_key="order-1-tax",
+    )
+
+    assert quote == TaxQuote(
+        calculation_id="taxcalc_test_1", tax=Money(148_625), total=Money(1_598_625)
+    )
+    [call] = http.calls
+    assert call["url"].endswith("/v1/tax/calculations")
+    sent = call["data"]
+    assert sent["currency"] == ["usd"]
+    assert sent["line_items[0][amount]"] == ["1450000"]
+    assert sent["line_items[0][reference]"] == ["2611-0042"]
+    assert sent["line_items[0][tax_code]"] == ["txcd_99999999"]
+    assert sent["line_items[0][tax_behavior]"] == ["exclusive"]  # tax on top of the price
+    assert sent["customer_details[address_source]"] == ["shipping"]
+    assert sent["customer_details[address][line1]"] == ["233 S Wacker Dr"]
+    assert sent["customer_details[address][city]"] == ["Chicago"]
+    assert sent["customer_details[address][state]"] == ["IL"]
+    assert sent["customer_details[address][postal_code]"] == ["60606"]
+    assert sent["customer_details[address][country]"] == ["US"]
+    assert "customer_details[address][line2]" not in sent  # empty parts are not sent
+    assert call["headers"]["Idempotency-Key"] == "order-1-tax"
+
+
+def test_an_address_stripe_cannot_place_becomes_our_tax_address_error() -> None:
+    http = RecordingHTTPClient(
+        {
+            "error": {
+                "type": "invalid_request_error",
+                "code": "customer_tax_location_invalid",
+                "message": "We could not determine the customer's tax location.",
+                "param": "customer_details[address]",
+            }
+        },
+        status=400,
+    )
+
+    with pytest.raises(TaxAddressError):
+        stripe_with(http).calculate_tax(
+            Money(1_000), address=CHICAGO, reference="r", tax_code="t", idempotency_key="k"
+        )
+
+
+def test_any_other_tax_failure_is_the_usual_provider_error() -> None:
+    http = RecordingHTTPClient(
+        {"error": {"type": "invalid_request_error", "code": "tax_code_invalid", "message": "x"}},
+        status=400,
+    )
+
+    with pytest.raises(PaymentProviderError):
+        stripe_with(http).calculate_tax(
+            Money(1_000), address=CHICAGO, reference="r", tax_code="t", idempotency_key="k"
+        )
+
+
+def test_a_payment_with_tax_carries_the_calculation_for_stripe_to_record() -> None:
+    http = RecordingHTTPClient(payment_intent(amount=1_598_625))
+
+    stripe_with(http).create_payment(
+        Money(1_598_625),
+        reference="2611-0042",
+        idempotency_key="key-1",
+        tax_calculation="taxcalc_test_1",
+    )
+
+    sent = http.calls[0]["data"]
+    assert sent["amount"] == ["1598625"]
+    assert sent["hooks[inputs][tax][calculation]"] == ["taxcalc_test_1"]
+
+
+def test_a_payment_without_tax_sends_no_tax_hook() -> None:
+    http = RecordingHTTPClient()
+
+    stripe_with(http).create_payment(Money(1_000), reference="r", idempotency_key="k")
+
+    assert not any(name.startswith("hooks") for name in http.calls[0]["data"])

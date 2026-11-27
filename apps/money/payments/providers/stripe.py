@@ -11,8 +11,18 @@ from typing import Any
 
 import stripe
 
-from apps.money.payments.exceptions import PaymentProviderError, WebhookSignatureError
-from apps.money.payments.providers.base import ProviderEvent, ProviderPayment, ProviderRefund
+from apps.money.payments.exceptions import (
+    PaymentProviderError,
+    TaxAddressError,
+    WebhookSignatureError,
+)
+from apps.money.payments.providers.base import (
+    ProviderEvent,
+    ProviderPayment,
+    ProviderRefund,
+    TaxAddress,
+    TaxQuote,
+)
 from apps.platform.core.money import Money
 
 logger = logging.getLogger(__name__)
@@ -53,7 +63,12 @@ class StripeProvider:
         )
 
     def create_payment(
-        self, amount: Money, *, reference: str, idempotency_key: str
+        self,
+        amount: Money,
+        *,
+        reference: str,
+        idempotency_key: str,
+        tax_calculation: str = "",
     ) -> ProviderPayment:
         params: Any = {
             "amount": amount.amount_minor,
@@ -61,11 +76,69 @@ class StripeProvider:
             "automatic_payment_methods": {"enabled": True},
             "metadata": {"reference": reference},
         }
+        if tax_calculation:
+            # Stripe's "basic" Stripe Tax with PaymentIntents: the linked calculation
+            # becomes a tax transaction when the payment succeeds, and refunds reverse
+            # it. Storing the id in metadata alone would not (docs.stripe.com/tax/
+            # payment-intent/simplified).
+            params["hooks"] = {"inputs": {"tax": {"calculation": tax_calculation}}}
         return self._call(
             "create",
             lambda: self._client.v1.payment_intents.create(
                 params, options={"idempotency_key": idempotency_key}
             ),
+        )
+
+    def calculate_tax(
+        self,
+        amount: Money,
+        *,
+        address: TaxAddress,
+        reference: str,
+        tax_code: str,
+        idempotency_key: str,
+    ) -> TaxQuote:
+        where = {
+            "line1": address.line1,
+            "line2": address.line2,
+            "city": address.city,
+            "state": address.state,
+            "postal_code": address.postal_code,
+            "country": address.country,
+        }
+        params: Any = {
+            "currency": amount.currency.lower(),
+            "line_items": [
+                {
+                    "amount": amount.amount_minor,
+                    "reference": reference,
+                    "tax_code": tax_code,
+                    "tax_behavior": "exclusive",  # prices are shown before tax (D69)
+                }
+            ],
+            "customer_details": {
+                "address": {name: value for name, value in where.items() if value},
+                "address_source": "shipping",
+            },
+        }
+        try:
+            calculation = self._client.v1.tax.calculations.create(
+                params, options={"idempotency_key": idempotency_key}
+            )
+        except stripe.StripeError as failure:
+            logger.warning(
+                "stripe tax calculation failed: %s (request %s)",
+                failure.code,
+                failure.request_id,
+            )
+            if failure.code == "customer_tax_location_invalid":
+                raise TaxAddressError() from failure
+            raise PaymentProviderError() from failure
+        currency = calculation.currency.upper()
+        return TaxQuote(
+            calculation_id=calculation.id or "",
+            tax=Money(calculation.tax_amount_exclusive, currency),
+            total=Money(calculation.amount_total, currency),
         )
 
     def get_payment(self, payment_id: str) -> ProviderPayment:

@@ -11,12 +11,18 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
 from apps.money.payments.models import Payment, Refund, StripeEvent
 from apps.money.payments.providers import get_provider
-from apps.money.payments.providers.base import ProviderEvent, ProviderPayment
+from apps.money.payments.providers.base import (
+    ProviderEvent,
+    ProviderPayment,
+    TaxAddress,
+    TaxQuote,
+)
 from apps.platform.core.money import Money
 from apps.users.accounts.models import User
 
@@ -41,13 +47,18 @@ def listen(listener: Listener) -> None:
         _listeners.append(listener)
 
 
-def start_payment(*, order: Any, amount: Money, reference: str, key: str) -> tuple[Payment, str]:
+def start_payment(
+    *, order: Any, amount: Money, reference: str, key: str, tax_calculation: str = ""
+) -> tuple[Payment, str]:
     """Ask the provider for a payment the buyer confirms in the browser.
 
     ``key`` makes it safe to repeat: the same key never makes a second payment.
+    ``tax_calculation`` (from ``quote_tax``) lets the provider record the sales tax.
     Returns the payment and the client secret for the browser.
     """
-    seen = get_provider().create_payment(amount, reference=reference, idempotency_key=key)
+    seen = get_provider().create_payment(
+        amount, reference=reference, idempotency_key=key, tax_calculation=tax_calculation
+    )
     payment = Payment.objects.create(
         order=order,
         provider_payment_id=seen.id,
@@ -57,6 +68,18 @@ def start_payment(*, order: Any, amount: Money, reference: str, key: str) -> tup
         idempotency_key=key,
     )
     return payment, seen.client_secret
+
+
+def quote_tax(amount: Money, *, address: TaxAddress, reference: str, key: str) -> TaxQuote:
+    """Sales tax on one item delivered to ``address`` (build E22), from the provider
+    (Stripe Tax: only where the company is registered; elsewhere 0)."""
+    return get_provider().calculate_tax(
+        amount,
+        address=address,
+        reference=reference,
+        tax_code=settings.SALES_TAX_CODE,
+        idempotency_key=key,
+    )
 
 
 @transaction.atomic
