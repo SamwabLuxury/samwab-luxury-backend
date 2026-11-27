@@ -54,7 +54,9 @@ def public_listings(
             price_max=price_max,
             include_sold=include_sold,
         )
-        .select_related("piece__brand", "piece__category", "piece__product_model")
+        .select_related(
+            "piece__brand", "piece__category", "piece__product_model", "piece__passport"
+        )
         .prefetch_related(
             Prefetch("piece__photos", queryset=Media.objects.order_by("sort_order", "id"))
         )

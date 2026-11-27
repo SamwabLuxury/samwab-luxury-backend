@@ -85,7 +85,14 @@ def test_no_role_may_delete_a_piece_or_a_retire_only_catalog_row() -> None:
         assert not held & {"delete_piece", "delete_brand", "delete_category", "delete_productmodel"}
 
 
-STAFF_ROLES = {roles.CATALOG_EDITOR, roles.INTAKE_STAFF, roles.SUPPORT, roles.FINANCE}
+# Build 15 gave reviewers their first grant: verifying pieces (passports).
+STAFF_ROLES = {
+    roles.CATALOG_EDITOR,
+    roles.INTAKE_STAFF,
+    roles.SUPPORT,
+    roles.FINANCE,
+    roles.REVIEWER,
+}
 
 
 def test_roles_without_screens_yet_hold_nothing() -> None:
