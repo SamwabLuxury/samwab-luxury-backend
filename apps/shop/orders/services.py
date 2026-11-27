@@ -15,8 +15,9 @@ from django.utils import timezone
 
 from apps.inventory.pieces.enums import VerificationStatus
 from apps.money.payments import services as payments
-from apps.money.payments.exceptions import PaymentProviderError
+from apps.money.payments.exceptions import PaymentProviderError, TaxAddressError
 from apps.money.payments.models import Payment
+from apps.money.payments.providers.base import TaxAddress
 from apps.platform.audit import services as audit
 from apps.platform.core import policy
 from apps.platform.core.exceptions import NotFoundError
@@ -49,6 +50,35 @@ def _address_text(address: Address) -> str:
     return "\n".join(line for line in lines if line)
 
 
+def _tax_address(address: Address) -> TaxAddress:
+    return TaxAddress(
+        line1=address.line1,
+        line2=address.line2 or "",
+        city=address.city,
+        state=address.region,
+        postal_code=address.postal_code,
+        country=address.country,
+    )
+
+
+def _sales_tax(order: Order, address: Address | None) -> tuple[int, str]:
+    """Tax on the order's price and the calculation it came from (build E22).
+
+    Nothing while ``SALES_TAX_ENABLED`` is off. Tax follows the delivery address, so
+    an order with none cannot be taxed (``TaxAddressError``)."""
+    if not settings.SALES_TAX_ENABLED:
+        return 0, ""
+    if address is None:
+        raise TaxAddressError()
+    quote = payments.quote_tax(
+        order.money(order.item_minor),
+        address=_tax_address(address),
+        reference=order.order_number,
+        key=f"order-{order.pk}-tax",
+    )
+    return quote.tax.amount_minor, quote.calculation_id
+
+
 def create_order(
     buyer: User,
     listing: Listing,
@@ -63,7 +93,9 @@ def create_order(
     Returns the order and the client secret the browser confirms the payment with.
     The listing row is locked, so two buyers cannot both get the piece. If the
     provider cannot be reached, nothing is saved. Only the delivery choices in
-    ``DELIVERY_CHOICES_OFFERED`` are accepted.
+    ``DELIVERY_CHOICES_OFFERED`` are accepted. With ``SALES_TAX_ENABLED``, sales tax
+    from the delivery address is added on top of the price; an address Stripe Tax
+    cannot place is 422 ``tax_address_invalid``, and nothing is saved.
     """
     if delivery_choice not in settings.DELIVERY_CHOICES_OFFERED:
         raise DeliveryChoiceNotAvailableError()
@@ -103,12 +135,15 @@ def create_order(
             hold_until=timezone.now() + policy.CHECKOUT_HOLD,
         )
         order.order_number = next_order_number(timezone.now())
+        order.tax_minor, order.tax_calculation_id = _sales_tax(order, shipping_address)
+        order.total_minor = order.item_minor + order.tax_minor
         order.save()
         _, client_secret = payments.start_payment(
             order=order,
             amount=order.money(order.total_minor),
             reference=order.order_number,
             key=f"order-{order.pk}-full",
+            tax_calculation=order.tax_calculation_id,
         )
         audit.record_saved(order, before=None, by=buyer)
     return order, client_secret

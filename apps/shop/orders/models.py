@@ -52,6 +52,12 @@ class Order(BaseModel):
     )
     hold_until = models.DateTimeField(help_text="Unpaid by then, the piece goes back on sale.")
     paid_at = models.DateTimeField(null=True, blank=True)
+    tax_calculation_id = models.CharField(
+        max_length=255,
+        blank=True,
+        editable=False,
+        help_text="Stripe Tax calculation behind tax_minor; empty when none (E22).",
+    )
     confirmation_sent_at = models.DateTimeField(
         null=True, blank=True, editable=False, help_text="When the confirmation email went (E21)."
     )

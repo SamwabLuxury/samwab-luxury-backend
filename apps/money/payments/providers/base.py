@@ -31,6 +31,28 @@ class ProviderRefund:
 
 
 @dataclass(frozen=True)
+class TaxAddress:
+    """Where the piece goes, as the tax service needs it (build E22). Empty parts
+    are left out; outside the US only the country matters."""
+
+    line1: str
+    line2: str
+    city: str
+    state: str
+    postal_code: str
+    country: str
+
+
+@dataclass(frozen=True)
+class TaxQuote:
+    """Tax worked out for one order: added on top of the price."""
+
+    calculation_id: str
+    tax: Money
+    total: Money
+
+
+@dataclass(frozen=True)
 class ProviderEvent:
     """A webhook event that passed the provider's signature check."""
 
@@ -44,11 +66,32 @@ class PaymentProvider(Protocol):
     name: str
 
     def create_payment(
-        self, amount: Money, *, reference: str, idempotency_key: str
+        self,
+        amount: Money,
+        *,
+        reference: str,
+        idempotency_key: str,
+        tax_calculation: str = "",
     ) -> ProviderPayment:
         """Start a payment the buyer confirms in the browser.
 
-        The same idempotency key always gives the same payment."""
+        The same idempotency key always gives the same payment. ``tax_calculation``
+        links a ``calculate_tax`` result, so the provider records the tax when the
+        payment succeeds and reverses it on refunds."""
+        ...
+
+    def calculate_tax(
+        self,
+        amount: Money,
+        *,
+        address: TaxAddress,
+        reference: str,
+        tax_code: str,
+        idempotency_key: str,
+    ) -> TaxQuote:
+        """Work out the sales tax on one item delivered to ``address`` (tax on top).
+
+        Raises ``TaxAddressError`` when the address cannot be placed."""
         ...
 
     def get_payment(self, payment_id: str) -> ProviderPayment: ...
