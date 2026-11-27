@@ -37,6 +37,11 @@ class DeliveryChoiceNotAvailableError(AppError):
     message = "For now, please choose to send your own courier to collect your piece."
 
 
+class TermsNotAcceptedError(AppError):
+    code = "terms_not_accepted"
+    message = "Please read and accept our terms and returns policy before you pay."
+
+
 class CannotBuyOwnListingError(AppError):
     code = "cannot_buy_own_listing"
     message = "You can't buy a piece you're selling."

@@ -1,10 +1,13 @@
 """Reads about users. Nothing here changes data."""
 
 from allauth.mfa.models import Authenticator
+from django.conf import settings
 
 from apps.users.accounts import roles
 from apps.users.accounts.enums import NextStep, SignupIntent
 from apps.users.accounts.models import User
+from apps.users.legal import selectors as legal
+from apps.users.legal.enums import DocumentKind
 
 
 def get_roles(user: User) -> list[str]:
@@ -22,15 +25,22 @@ def get_next_steps(user: User) -> list[str]:
     The web app uses this to choose her next screen. An empty list means
     nothing is waiting.
 
-    The records behind each step (accepted terms, ID checks, payout accounts,
-    dealer applications) arrive in later builds. Until then, every step of the
-    chosen onboarding is listed until the matching role is granted.
+    ``accept_terms`` is listed for anyone while a sign-up text in force (terms of
+    service, privacy policy) is not accepted, and for an owner until she has accepted
+    the consignment agreement in force (build 11). The records behind the other steps
+    (ID checks, payout accounts, dealer applications) arrive in later builds; until
+    then they are listed until the matching role is granted.
     """
     held = set(get_roles(user))
     steps: list[str] = []
 
+    if legal.missing(user, settings.LEGAL_SIGNUP_DOCUMENTS):
+        steps.append(NextStep.ACCEPT_TERMS)
+
     if user.signup_intent == SignupIntent.OWNER and roles.OWNER not in held:
-        steps += [NextStep.ACCEPT_TERMS, NextStep.IDENTITY_CHECK, NextStep.PAYOUT_ACCOUNT]
+        if not legal.has_accepted_current(user, DocumentKind.CONSIGNMENT_AGREEMENT):
+            steps.append(NextStep.ACCEPT_TERMS)
+        steps += [NextStep.IDENTITY_CHECK, NextStep.PAYOUT_ACCOUNT]
 
     if user.signup_intent == SignupIntent.DEALER and roles.DEALER not in held:
         steps += [NextStep.IDENTITY_CHECK, NextStep.DEALER_APPLICATION]

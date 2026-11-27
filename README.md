@@ -374,6 +374,36 @@ curl -s -H "Content-Type: application/json" -d '{"token": "<the token>"}' \
 
 The admin site lists members at `/admin/mailing_list/listmember/` (read-only).
 
+### Publish the legal texts
+
+The terms of service, privacy policy and returns policy start as placeholder drafts.
+Nothing is asked of anyone until a text is published.
+
+1. Open **People → Legal texts** in the admin site (superusers for now).
+2. Open a draft (such as *Terms of service, version 1 (draft)*), replace the whole
+   placeholder with the owners' wording, and **Save**. Leave a blank line between
+   paragraphs.
+3. Back on the list, tick it and choose **Publish the selected drafts now**. A text
+   that still says `[PLACEHOLDER` is refused.
+
+From then on its words never change. To change them, tick it, choose **Make a new
+draft version of the selected texts**, edit the copy and publish it: the old version
+is retired at that moment, and everyone is asked to accept the new one.
+
+With `runserver` running and the terms published, read them and accept them (log in
+first as in [Sign up and log in from the command line](#sign-up-and-log-in-from-the-command-line),
+so `cookies.txt` and `TOKEN` exist):
+
+```bash
+curl -s http://127.0.0.1:8000/api/v1/legal-documents/terms_of_service/
+curl -s -b cookies.txt -H "X-CSRFToken: $TOKEN" -H "Content-Type: application/json" \
+  -d '{"document_kind": "terms_of_service", "version": "1"}' \
+  http://127.0.0.1:8000/api/v1/me/legal-acceptances/
+```
+
+**People → Terms accepted** lists every acceptance with its time and IP address
+(read-only).
+
 ### Sign up and log in from the command line
 
 The web app does exactly this. Run it in a second terminal while `runserver` is
@@ -623,6 +653,9 @@ the branch and the database file. The full log is saved in `~/samwab-build-logs/
 | A staff member logs in and sees "You don't have permission to view or edit anything" | **Staff status** is ticked but they hold no role | Add them to a role group (`catalog_editor`, `intake_staff`) on their user page |
 | A role's permissions you changed by hand in the admin are back as before | Role permissions come from code and are set again on every `migrate` | Change `apps/<app>/permissions.py` in a pull request instead |
 | `AuditEventIsFinalError` | Code tried to change or delete an audit event | Audit events are never changed. Record a new event instead |
+| `TermsAcceptanceIsFinalError` | Code tried to change or delete an acceptance of a legal text | Acceptances are never changed. A new version of the text gets new acceptances |
+| Checkout answers 422 `terms_not_accepted` | A legal text in `LEGAL_CHECKOUT_DOCUMENTS` is published and this buyer has not accepted its current version | Accept it (`POST /api/v1/me/legal-acceptances/`), then check out again |
+| "This text still has placeholder wording" when publishing | The draft still contains `[PLACEHOLDER` | Replace the whole placeholder with the real wording, save, then publish |
 | `400` with `idempotency_key_missing` or `idempotency_key_invalid` | A create request without a good `Idempotency-Key` header | Send a new random key (a UUID) in `Idempotency-Key` |
 | `422` with `idempotency_key_reused` | The same key was sent with a different body or to another address | Make a new key for each new action; reuse a key only to retry the same request |
 | `409` with `idempotency_key_in_progress` | The first request with that key is still running | Wait a moment and send it again: you will get its answer |
@@ -684,6 +717,7 @@ apps/                 our code: apps grouped by area; each folder inside a group
     accounts/         the User model, sign-up and login (django-allauth), roles and permissions
     addresses/        delivery addresses, with the name, street and phone encrypted
     mailing_list/     the mailing list: join, confirm by email, unsubscribe
+    legal/            legal texts (terms, privacy, returns), who accepted which version, consents
   inventory/          what Samwab holds
     catalog/          brands, categories, designs, materials, capture protocols, comparable sales
       models/         one file per subject; import models from apps.inventory.catalog.models
@@ -740,6 +774,7 @@ Other files at the top of the repository:
 | `payments` | The only app that talks to a payment provider. Stripe today, behind an interface so another provider can be added; Stripe webhooks are checked and stored here. |
 | `addresses` | Delivery addresses a person keeps on their account. The name, street lines and phone are encrypted in the database. |
 | `mailing_list` | The mailing list ("Join the list"): members confirmed by email, early access to drops. |
+| `legal` | Legal texts in numbered versions (terms of service, privacy policy, returns policy and more), written and published by staff in the admin; who accepted which version, when and from where (append-only); consents to marketing and to photos used for model training. |
 | `listings` | Listings: a piece offered for sale at an asking price, with its price history. Staff list house stock in the admin site; buyers browse live listings through the public API. |
 | `pieces` | Pieces: one row per physical object Samwab holds, sells or has checked, with its materials, its photos, its custody status (where it is) and its verification status (is it authentic). Staff register pieces in the admin site. |
 | `core` | Shared building blocks: IDs, `BaseModel`, `Money`, policy values, errors, paging, request IDs, the API description and the health endpoint. |
@@ -836,7 +871,7 @@ http://127.0.0.1:8000/_allauth/openapi.html.
 | Method and path | Purpose |
 |---|---|
 | `GET /_allauth/browser/v1/config` | Call once when the web app loads. It sets the `csrftoken` cookie |
-| `POST /_allauth/browser/v1/auth/signup` | `{"email", "password", "intent"}`. `intent` is `buyer` (default), `owner` or `dealer` |
+| `POST /_allauth/browser/v1/auth/signup` | `{"email", "password", "intent", "terms_accepted"}`. `intent` is `buyer` (default), `owner` or `dealer`. `terms_accepted: true` is the "I agree" box: the terms of service and privacy policy in force are recorded as accepted (see [Legal texts](#legal-texts)) |
 | `POST /_allauth/browser/v1/auth/email/verify` | `{"key": "123456"}`: the 6-digit code from the email. Logs her in |
 | `POST /_allauth/browser/v1/auth/login` | `{"email", "password"}` |
 | `GET /_allauth/browser/v1/auth/session` | Is she logged in? |
@@ -1043,6 +1078,53 @@ They never appear in the audit log, and `str(address)` shows only the label and 
 - On the live site, emails still go to the Render log (`DJANGO_EMAIL_TO_LOGS`)
   until the Resend build.
 
+### Legal texts
+
+Build 11, app `apps/users/legal`. Tables `legal_documents`, `terms_acceptances` and
+`consents`, as in the data model, except that the exact words are kept in the
+`body` column (with their SHA-256) instead of behind a storage key.
+
+- **Kinds:** `terms_of_service`, `privacy_policy`, `returns_policy`,
+  `authentication_policy`, `consignment_agreement`, `storage_terms`,
+  `buyer_authentication_form`. Each has numbered versions (`version`, unique per kind).
+- **States, from two dates:** a draft has no `effective_at`; publishing sets it and
+  retires the version in force (`retired_at`), so one version per kind is in force at
+  most (database constraint); a kind also has one draft at most. Only drafts can be
+  edited or deleted; a draft still containing `[PLACEHOLDER` cannot be published.
+  Every change is audited (the words by their SHA-256). The three placeholder drafts
+  come from migration `legal.0003`.
+- **Nothing is required until a text is published.** Then:
+  - `next_steps` on `GET /api/v1/me/` includes `accept_terms` while a text in
+    `LEGAL_SIGNUP_DOCUMENTS` (terms of service, privacy policy) is not accepted at
+    its current version; for an owner, also until she accepts the consignment
+    agreement in force.
+  - `POST /api/v1/orders/` answers 422 `terms_not_accepted` while a text in
+    `LEGAL_CHECKOUT_DOCUMENTS` (terms of service, returns policy) is not accepted,
+    before anything is saved. Both lists are in `configurations/settings/base.py`.
+- `GET /api/v1/legal-documents/` (no login): the texts in force, without their words;
+  `accepted` is `true`/`false` for a logged-in reader, `null` otherwise.
+  `GET /api/v1/legal-documents/{kind}/`: one text with its `body`; 404 while that kind
+  has nothing in force.
+- `POST /api/v1/me/legal-acceptances/` (the contract): `document_kind`, `version`,
+  optional `signed_name` and `order_id`. 201 with the record; accepting again answers
+  with the first record. Only the version in force: 409 `legal_document_not_current`
+  for an older, draft or unknown one. The consignment agreement and the buyer
+  authentication form need `signed_name` (422 `signed_name_required`); the buyer
+  authentication form is per order (`order_id` of one of her orders, 422
+  `order_required`; other texts 422 `order_not_needed`).
+- Acceptances are **append-only** like the audit log: Django refuses to change or
+  delete one (`TermsAcceptanceIsFinalError`), and on PostgreSQL a trigger refuses it
+  too (migration `legal.0002`). They record the IP address (`REMOTE_ADDR`, so on
+  Render the proxy's until builds 42 and 44 decide which forwarded address to trust;
+  `0.0.0.0` when unknown) and the browser (`User-Agent`, first 500 characters).
+- **Consents:** `GET /api/v1/me/consents/` lists `marketing` and `training_images`,
+  each `granted` or not; `PUT /api/v1/me/consents/{kind}/` gives one (recorded under
+  the privacy policy in force; 409 `privacy_policy_not_published` until there is one),
+  `DELETE` takes it back (always 204). Taking back fills `withdrawn_at`; giving again
+  adds a new row, so the history stays.
+- Admin (**People**): Legal texts (superusers; actions Publish, Retire, Make a new
+  draft version), Terms accepted and Consents (read-only).
+
 ### Payments
 
 All payment calls go through **one interface**, `apps/money/payments/providers/base.py`
@@ -1146,6 +1228,7 @@ from what the browser says.**
 | Money arrives after the order closed (or after the listing was withdrawn) | Refunded in full at once (`missed_deadline`); the order becomes `refunded`; finance sees a warning in the logs |
 | Cancelling just as the payment succeeds | The order ends `paid` and the cancel answers 409 `order_already_paid` |
 | Sales tax on, and Stripe cannot place the delivery address | 422 `tax_address_invalid` ("check the state and the ZIP or postal code"); nothing is saved and the order number is given back |
+| The terms of service or returns policy is published and she has not accepted its current version | 422 `terms_not_accepted`, before anything is saved: she accepts it with `POST /api/v1/me/legal-acceptances/`, then checks out again |
 
 Statuses (`apps/shop/orders/state.py`): `pending_payment` → `paid` or `cancelled`;
 `cancelled` → `refunded`. A paid order marks its listing `sold`. While an order
@@ -1668,7 +1751,7 @@ On your own machine, only `DJANGO_SECRET_KEY` is needed.
 The README is updated in every build.
 
 
-Last build: E22, sales tax.
+Last build: 11, legal documents.
 
 ## Build history
 
@@ -1715,6 +1798,7 @@ One line per build, newest last. Each build is one feature, merged into `dev`.
 | E20 | 26 Nov 2026 | Drop recaps and sold lots: drop pages list lots for sale or sold (`sold_at`), so a closed drop's page is its recap; `sold_count` on every drop; `GET /api/v1/drops/?phase=closed` lists past drops, newest first; withdrawn lots stay hidden; the early-hours rule unchanged |
 | E21 | 26 Nov 2026 | Order confirmation email: one email to the buyer when an order is paid (piece, price, sales tax when charged, paid today, own courier, "Track your order", "SAMWAB Luxury, LLC"), plain and formatted; sent after the payment is saved and only once (`confirmation_sent_at`); a mail outage never undoes a payment, and `send_order_confirmations` sends what was missed; optional `DJANGO_SUPPORT_EMAIL` for replies |
 | E22 | 27 Nov 2026 | Sales tax: with `DJANGO_SALES_TAX_ENABLED` (off by default), checkout asks Stripe Tax for the tax at the delivery address, adds it on top of the price, and attaches the calculation to the payment so Stripe records the tax and reverses it on refunds; 422 `tax_address_invalid` for an address Stripe cannot place; `tax_calculation_id` on the order, shown in the admin |
+| 11 | 27 Nov 2026 | Legal documents: new app `apps/users/legal`, tables `legal_documents` (numbered versions, written and published by staff, words never changed once published), `terms_acceptances` (append-only, with IP address and browser; PostgreSQL trigger) and `consents`; placeholder drafts of the terms, privacy and returns policy; `GET /api/v1/legal-documents/` and `/{kind}/`, `POST /api/v1/me/legal-acceptances/`, `GET`/`PUT`/`DELETE /api/v1/me/consents/`; `terms_accepted` at sign-up; `accept_terms` in `next_steps`; checkout 422 `terms_not_accepted` once a text is published |
 
 Builds run in the order the roadmap sets, so numbers can skip: builds 12 to 14 came
 before 06 to 11 to start on what buyers see, then 07, 08, the 08a tidy-up and build 01 (production deploy).

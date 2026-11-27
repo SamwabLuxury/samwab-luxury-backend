@@ -12,7 +12,7 @@ class SignupIntent(models.TextChoices):
 class NextStep(models.TextChoices):
     """Onboarding steps the web app can send someone to next."""
 
-    ACCEPT_TERMS = "accept_terms", "Accept the consignment terms"
+    ACCEPT_TERMS = "accept_terms", "Accept the terms"
     IDENTITY_CHECK = "identity_check", "Complete the ID check"
     PAYOUT_ACCOUNT = "payout_account", "Set up payouts"
     DEALER_APPLICATION = "dealer_application", "Apply to become a dealer"
