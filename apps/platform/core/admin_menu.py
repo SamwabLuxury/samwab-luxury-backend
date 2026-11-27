@@ -88,6 +88,9 @@ NAVIGATION: list[dict[str, Any]] = [
         "collapsible": True,
         "items": [
             item("Accounts", "person", "accounts", "user"),
+            item("Legal texts", "gavel", "legal", "legaldocument"),
+            item("Terms accepted", "task_alt", "legal", "termsacceptance"),
+            item("Consents", "verified_user", "legal", "consent"),
             item("Staff roles", "badge", "auth", "group", technical=True),
         ],
     },
