@@ -81,6 +81,13 @@ class PublicPieceSerializer(serializers.ModelSerializer[Piece]):
         help_text="The piece's facts as rows to show as they are: maker, model, year, size, "
         "grade, then its attributes."
     )
+    passport_code = serializers.SerializerMethodField(
+        help_text="Code of its public passport page (GET /api/v1/passports/{code}/); null "
+        "until Samwab has verified the piece, or while the passport is hidden."
+    )
+    passport_number = serializers.SerializerMethodField(
+        help_text='The passport number as printed on the card, such as "0042 17"; null as above.'
+    )
 
     class Meta:
         model = Piece
@@ -101,11 +108,29 @@ class PublicPieceSerializer(serializers.ModelSerializer[Piece]):
             "custody_status",
             "media",
             "lot_record",
+            "passport_code",
+            "passport_number",
         )
 
     @extend_schema_field(LotRecordRowSerializer(many=True))
     def get_lot_record(self, piece: Piece) -> list[Row]:
         return lot_record(piece)
+
+    @staticmethod
+    def _passport(piece: Piece) -> Any:
+        # Reverse one-to-one: missing until the piece is verified (passports, build 15).
+        passport = getattr(piece, "passport", None)
+        return passport if passport is not None and passport.is_public else None
+
+    @extend_schema_field(serializers.CharField(allow_null=True))
+    def get_passport_code(self, piece: Piece) -> str | None:
+        passport = self._passport(piece)
+        return passport.public_code if passport else None
+
+    @extend_schema_field(serializers.CharField(allow_null=True))
+    def get_passport_number(self, piece: Piece) -> str | None:
+        passport = self._passport(piece)
+        return passport.printed_number if passport else None
 
     def to_representation(self, instance: Piece) -> dict[str, Any]:
         # Photos are prefetched with their piece; spare a query per photo for the alt text.

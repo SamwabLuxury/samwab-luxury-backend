@@ -21,7 +21,7 @@ from django.http import HttpRequest
 from django.utils.html import format_html
 
 from apps.inventory.pieces import photos, services
-from apps.inventory.pieces.enums import CustodyStatus
+from apps.inventory.pieces.enums import CustodyStatus, VerificationStatus
 from apps.inventory.pieces.models import Media, Piece, PieceMaterial
 from apps.platform.core.admin_dollars import DollarsAdmin
 from apps.platform.core.admin_look import ModelAdmin, TabularInline
@@ -105,7 +105,13 @@ class PieceAdmin(DollarsAdmin, ModelAdmin):  # type: ignore[type-arg]
     autocomplete_fields = ("brand", "category", "product_model", "current_owner")
     inlines = (PieceMaterialInline, PhotoInline)
     readonly_fields = ("verification_status", "custody_status", "created_at", "updated_at")
-    actions = ("mark_in_transit", "mark_received", "put_in_vault")
+    actions = (
+        "mark_in_transit",
+        "mark_received",
+        "put_in_vault",
+        "verify_selected",
+        "mark_not_authentic_selected",
+    )
     fieldsets = (
         (None, {"fields": ("title", "brand", "category", "product_model", "description")}),
         (
@@ -181,6 +187,46 @@ class PieceAdmin(DollarsAdmin, ModelAdmin):  # type: ignore[type-arg]
                 self.message_user(request, f"{piece}: {_why_not(piece)}", messages.ERROR)
             else:
                 self.message_user(request, f"{piece} {done}.")
+
+    # ---------- the check result (build 15) ----------
+    # Verifying issues the piece's passport in the same step (passports app). Only
+    # people allowed to verify (the reviewer role) see these two actions.
+
+    def has_verify_permission(self, request: HttpRequest) -> bool:
+        return request.user.has_perm("passports.verify_passport")
+
+    @admin.action(description="Verified authentic: issue the passport", permissions=["verify"])
+    def verify_selected(self, request: HttpRequest, queryset: QuerySet[Piece]) -> None:
+        from apps.inventory.passports import services as passports
+
+        staff: User = request.user  # type: ignore[assignment]
+        for piece in queryset:
+            if self._result_already_recorded(request, piece):
+                continue
+            passport = passports.verify(piece, by=staff)
+            self.message_user(request, f"{piece} is verified: passport {passport} issued.")
+
+    @admin.action(description="Not authentic", permissions=["verify"])
+    def mark_not_authentic_selected(self, request: HttpRequest, queryset: QuerySet[Piece]) -> None:
+        from apps.inventory.passports import services as passports
+
+        staff: User = request.user  # type: ignore[assignment]
+        for piece in queryset:
+            if self._result_already_recorded(request, piece):
+                continue
+            passports.mark_not_authentic(piece, by=staff)
+            self.message_user(request, f"{piece} is recorded as not authentic.", messages.WARNING)
+
+    def _result_already_recorded(self, request: HttpRequest, piece: Piece) -> bool:
+        if piece.verification_status == VerificationStatus.UNVERIFIED:
+            return False
+        shown = piece.get_verification_status_display().lower()
+        self.message_user(
+            request,
+            f"{piece}: the check result is already recorded ({shown}) and cannot change.",
+            messages.ERROR,
+        )
+        return True
 
     def save_model(self, request: HttpRequest, obj: Any, form: Any, change: bool) -> None:
         staff: User = request.user  # type: ignore[assignment]

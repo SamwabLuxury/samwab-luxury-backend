@@ -55,9 +55,11 @@ LOCAL_APPS = [
     "apps.platform.idempotency",
     "apps.inventory.catalog",
     "apps.inventory.pieces",
+    "apps.inventory.passports",
     "apps.shop.listings",
     "apps.users.addresses",
     "apps.users.mailing_list",
+    "apps.users.legal",
     "apps.money.payments",
     "apps.shop.orders",
 ]
@@ -261,6 +263,12 @@ COMPARABLE_SALES_SHOWN = 10
 # For now only the buyer's own courier; add "keep_in_vault" here to switch it on.
 DELIVERY_CHOICES_OFFERED = ["buyer_courier"]
 
+# Legal texts (apps/users/legal, build 11). A text asks for nothing until staff publish
+# it in the admin. Sign-up's "I agree" box accepts the first list, and ``next_steps``
+# shows ``accept_terms`` while one of them is not accepted; checkout needs the second.
+LEGAL_SIGNUP_DOCUMENTS = ["terms_of_service", "privacy_policy"]
+LEGAL_CHECKOUT_DOCUMENTS = ["terms_of_service", "returns_policy"]
+
 # Save for later (apps/shop/listings, build E11): the most pieces one account may save.
 MAX_SAVED_LISTINGS = 200
 
@@ -299,6 +307,9 @@ SPECTACULAR_SETTINGS: dict[str, Any] = {
         "ConditionGradeEnum": "apps.inventory.catalog.enums.ConditionGrade",
         "SaleSourceEnum": "apps.inventory.catalog.enums.SaleSource",
         "AdjustmentDirectionEnum": "apps.shop.listings.enums.AdjustmentDirection",
+        # Legal texts and consents (build 11): "kind" is also a photo's and a payment's field.
+        "LegalDocumentKindEnum": "apps.users.legal.enums.DocumentKind",
+        "ConsentKindEnum": "apps.users.legal.enums.ConsentKind",
     },
     "SERVE_INCLUDE_SCHEMA": False,
     # Anyone can read the API description for now. Reviewed in the security build.

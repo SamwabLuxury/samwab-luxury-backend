@@ -54,6 +54,9 @@ NAVIGATION: list[dict[str, Any]] = [
             {"title": "Home", "icon": "home", "link": reverse_lazy("admin:index")},
             item("Pieces", "diamond", "pieces", "piece"),
             item("Pieces for sale", "sell", "listings", "listing"),
+            item("Passports", "badge", "passports", "passport"),
+            item("Condition reports", "fact_check", "passports", "conditionreport"),
+            item("Restorations", "build", "passports", "restoration"),
         ],
     },
     {
@@ -88,6 +91,9 @@ NAVIGATION: list[dict[str, Any]] = [
         "collapsible": True,
         "items": [
             item("Accounts", "person", "accounts", "user"),
+            item("Legal texts", "gavel", "legal", "legaldocument"),
+            item("Terms accepted", "task_alt", "legal", "termsacceptance"),
+            item("Consents", "verified_user", "legal", "consent"),
             item("Staff roles", "badge", "auth", "group", technical=True),
         ],
     },

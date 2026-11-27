@@ -34,12 +34,14 @@ from apps.shop.orders.exceptions import (
     ListingUnavailableError,
     OrderAlreadyPaidError,
     OrderNotCancellableError,
+    TermsNotAcceptedError,
 )
 from apps.shop.orders.models import Order
 from apps.shop.orders.numbers import next_order_number
 from apps.shop.orders.state import ORDER
 from apps.users.accounts.models import User
 from apps.users.addresses.models import Address
+from apps.users.legal import selectors as legal
 
 logger = logging.getLogger(__name__)
 
@@ -93,12 +95,16 @@ def create_order(
     Returns the order and the client secret the browser confirms the payment with.
     The listing row is locked, so two buyers cannot both get the piece. If the
     provider cannot be reached, nothing is saved. Only the delivery choices in
-    ``DELIVERY_CHOICES_OFFERED`` are accepted. With ``SALES_TAX_ENABLED``, sales tax
-    from the delivery address is added on top of the price; an address Stripe Tax
-    cannot place is 422 ``tax_address_invalid``, and nothing is saved.
+    ``DELIVERY_CHOICES_OFFERED`` are accepted. Every text in ``LEGAL_CHECKOUT_DOCUMENTS``
+    that is in force must be accepted first (422 ``terms_not_accepted``). With
+    ``SALES_TAX_ENABLED``, sales tax from the delivery address is added on top of the
+    price; an address Stripe Tax cannot place is 422 ``tax_address_invalid``, and
+    nothing is saved.
     """
     if delivery_choice not in settings.DELIVERY_CHOICES_OFFERED:
         raise DeliveryChoiceNotAvailableError()
+    if legal.missing(buyer, settings.LEGAL_CHECKOUT_DOCUMENTS):
+        raise TermsNotAcceptedError()
     release_expired_hold(listing)
     with transaction.atomic():
         listing = (
